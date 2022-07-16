@@ -10,6 +10,12 @@ __or it's useless for you.__
 Windows 11 21H2 x64 (22000.795)  
 Windows 10 21H2 x64 (19044.1826)  
 
+## Example
+__CreateProcessInternalW-Full.exe  (ImageName)__  
+(1) CreateProcessInternalW-Full.exe dfrgui  
+(2) CreateProcessInternalW-Full.exe skype  
+(3) CreateProcessInternalW-Full.exe "C:\Users\Administrator\AppData\Local\Microsoft\WindowsApps\MicrosoftEdge.exe"  
+
 ## Build Environment  
 Visual Studio 2022  
 __Relase x64__  
