@@ -1,4 +1,5 @@
 #pragma once
+#include "sxssrv.hpp"
 #include "structs.hpp"
 #include <appmodel.h>
 
@@ -31,6 +32,7 @@
 #define BASE_MSG_SXS_ALTERNATIVE_MODE                                   (0x0040) // rev
 #define BASE_MSG_SXS_DEV_OVERRIDE_PRESENT                               (0x0080) // rev
 #define BASE_MSG_SXS_MANIFEST_OVERRIDE_PRESENT                          (0x0100) // rev
+//#define BASE_MSG_SXS_DOTLOCAL_OVERRIDE_PRESENT
 #define BASE_MSG_SXS_PACKAGE_IDENTITY_PRESENT                           (0x0400) // rev
 #define BASE_MSG_SXS_FULL_TRUST_INTEGRITY_PRESENT                       (0x0800) // rev
 
@@ -163,8 +165,8 @@ typedef struct _BASE_MSG_SXS_STREAM {
     UCHAR          PathType;
     UCHAR          HandleType;//2
     UNICODE_STRING Path;//8
-    HANDLE         FileHandle;//
-    HANDLE         Handle;
+    HANDLE         FileHandle;//24
+    HANDLE         Handle;//32
     ULONGLONG      Offset; // big enough to hold file offsets in the future
     SIZE_T         Size;
 } BASE_MSG_SXS_STREAM, * PBASE_MSG_SXS_STREAM;
@@ -198,25 +200,24 @@ typedef struct _BASE_SXS_CREATEPROCESS_MSG {//win 10 new
             SIZE_T PolicyOverrideSize;//72 Path???
             PVOID ManifestAddress;//80
             ULONG ManifestSize;//88
-            BYTE Reserved3[16];//96->112
-            BYTE Reserved4[8];//112->120
-            //====================================================
+            //BYTE Reserved3[16];//96->112
+            //BYTE Reserved4[8];//112->120
         };//Vista new Alternative
         struct
         {
             BASE_MSG_SXS_STREAM Manifest;//8
             BASE_MSG_SXS_STREAM Policy;//64
+            UNICODE_STRING AssemblyDirectory;//120->136
         }; //SafeMode old Classic
     };
-    UNICODE_STRING AssemblyDirectory;//120->136
     //=================================================================
-    UNICODE_STRING CacheSxsLanguageBuffer; //136->152 ===== [17]-[18]
+    UNICODE_STRING CultureFallBacks; //136->152 ===== [17]-[18] CultureFallBacks CacheSxsLanguageBuffer
     ACTIVATION_CONTEXT_RUN_LEVEL_INFORMATION ActivationContextRunLevel;//[19]-[20]/2   152->164 
-    USHORT SxsProcessorArchitecture;// [20] + 4 164->168 Uncorrected!!! ****Version?? UnkowAppcompat
-    UNICODE_STRING AssemblyIdentity;    //168->184 L"-----------------------------------------------------------" [21]-[22] //Microsoft.Windows.Shell.notepad
+    DWORD SxsSupportedOSMajorVersion;// [20] + 4 164->168 Uncorrected!!! ****Version?? SxsProcessorArchitecture
+    UNICODE_STRING AssemblyName;    //168->184 L"-----------------------------------------------------------" [21]-[22] //Microsoft.Windows.Shell.notepad
     ULONGLONG SxsMaxVersionTested;//184->192 [23]
-    WCHAR ApplicationUserModelId[APPLICATION_USER_MODEL_ID_MAX_LENGTH];
-    //312 NULL
+    WCHAR ApplicationUserModelId[APPLICATION_USER_MODEL_ID_MAX_LENGTH];  // ?? 312
+    DWORD UnkowAppX;//??? APPLICATION_USER_MODEL_ID_MAX_LENGTH + 2 ?
 } BASE_SXS_CREATEPROCESS_MSG, * PBASE_SXS_CREATEPROCESS_MSG; 
 
 typedef struct _BASE_CREATE_PROCESS {
@@ -267,37 +268,86 @@ typedef struct _SXS_CREATEPROCESS_UTILITY {
     HANDLE FileHandle;//AppXFileHandle
 }SXS_CREATEPROCESS_UTILITY,*PSXS_CREATEPROCESS_UTILITY; //88
 
-/* 现在 160->目标504
+#define IN
+#define OUT
+typedef struct _SXS_GENERATE_ACTIVATION_CONTEXT_STREAM
+{
+    IStream* Stream;
+
+    //
+    // This is not necessarily a file system path, just something
+    // for descriptive/debugging purposes.
+    //
+    // Still, when they are file system paths, we try to keep them as Win32 paths instead of Nt paths.
+    //
+    PCWSTR  Path;
+    ULONG   PathType;
+} SXS_GENERATE_ACTIVATION_CONTEXT_STREAM;
+
+
+// 104 -> 408 OK
+#define IN
+#define OUT
+typedef struct _SXS_GENERATE_ACTIVATION_CONTEXT_PARAMETERS
+{
+    IN DWORD                    Flags;//0
+    IN USHORT                   ProcessorArchitecture;//4
+    IN PWSTR                    CultureFallBacks;//8
+    IN PCWSTR                   AssemblyDirectory; //16 should be a Win32 path
+    IN PCWSTR                   TextualAssemblyIdentity;//24
+
+    IN SXS_GENERATE_ACTIVATION_CONTEXT_STREAM Manifest;//32
+    IN SXS_GENERATE_ACTIVATION_CONTEXT_STREAM Policy;//56
+    IN ULONGLONG                ResourceId;//80
+    // when generate activation context for system default fails, 
+    // this mask shows whether it fails for some certain reason which we could ignore the error.
+    OUT DWORD                   SystemDefaultActCxtGenerationResult; //88
+    OUT HANDLE                  SectionObjectHandle;//96
+
+    ACTIVATION_CONTEXT_RUN_LEVEL_INFORMATION ActivationContextRunLevel;//104
+    DWORD SxsSupportedOSMajorVersion; //116
+    //PSXS_IMPERSONATION_CALLBACK ImpersonationCallback;
+    //PVOID                       ImpersonationContext;
+    OUT ULONGLONG               SxsMaxVersionTested;//120
+    WCHAR ApplicationUserModelId[APPLICATION_USER_MODEL_ID_MAX_LENGTH];//128 
+    DWORD UnkowAppX;//??? APPLICATION_USER_MODEL_ID_MAX_LENGTH + 2 ?
+
+    PCWSTR AssemblyName;//392
+    USHORT AssemblyNameLength;
+} SXS_GENERATE_ACTIVATION_CONTEXT_PARAMETERS, * PSXS_GENERATE_ACTIVATION_CONTEXT_PARAMETERS;
+typedef const SXS_GENERATE_ACTIVATION_CONTEXT_PARAMETERS* PCSXS_GENERATE_ACTIVATION_CONTEXT_PARAMETERS;
+
+ //现在 160->目标504 OK!
 typedef struct _BASE_SXS_CREATE_ACTIVATION_CONTEXT_MSG {
-    IN ULONG               Flags;
-    IN USHORT              ProcessorArchitecture;
-    IN LANGID              LangId;
-    IN BASE_MSG_SXS_STREAM Manifest;
-    IN BASE_MSG_SXS_STREAM Policy;
-    IN UNICODE_STRING      AssemblyDirectory;
-    IN UNICODE_STRING      TextualAssemblyIdentity;
-    //
-    // Csrss writes a PVOID through this PVOID.
-    // It assumes the PVOID to write is of native size;
-    // for a while it was. Now, it often is not, so
-    // we do some manual marshalling in base\win32\client\csrsxs.c
-    // to make it right. We leave this as plain PVOID
-    // instead of say PVOID* (as it was for a while) to
-    // defeat the wow64 thunk generator.
-    //
-    // The thunks can be seen in
-    // base\wow64\whbase\obj\ia64\whbase.c
-    //
-    PVOID                  ActivationContextData;
-} BASE_SXS_CREATE_ACTIVATION_CONTEXT_MSG, * PBASE_SXS_CREATE_ACTIVATION_CONTEXT_MSG;
+    ULONG                   Flags;//0
+    USHORT                  ProcessorArchitecture;//4
+    UNICODE_STRING          CultureFallBacks;//8
+    BASE_MSG_SXS_STREAM     Manifest;//24
+    BASE_MSG_SXS_STREAM     Policy;//80
+    UNICODE_STRING          AssemblyDirectory;//136
+    UNICODE_STRING          TextualAssemblyIdentity;//152
+    LARGE_INTEGER           FileLastWriteTime;//168
+    ULONGLONG               ResourceId;//176  == 1 ??
+    PVOID                   ActivationContextData;//184
+    PVOID                   ActivationContextDataWow64;//192
+    ACTIVATION_CONTEXT_RUN_LEVEL_INFORMATION ActivationContextRunLevel;//200
+    ULONG                   SxsSupportedOSMajorVersion;//212
+    UNICODE_STRING          AssemblyName;//216
+    ULONGLONG SxsMaxVersionTested;//232
+    WCHAR ApplicationUserModelId[APPLICATION_USER_MODEL_ID_MAX_LENGTH];//240
+    DWORD UnkowAppX;
+} BASE_SXS_CREATE_ACTIVATION_CONTEXT_MSG, * PBASE_SXS_CREATE_ACTIVATION_CONTEXT_MSG;//504
 typedef const BASE_SXS_CREATE_ACTIVATION_CONTEXT_MSG* PCBASE_SXS_CREATE_ACTIVATION_CONTEXT_MSG;
+
 
 typedef struct _BASE_SRV_SXS_SYSTEM_DEFAULT_ACTIVATION_CONTEXT {
     HANDLE               Section;
     const UNICODE_STRING ProcessorArchitectureString;
     const ULONG          ProcessorArchitecture;
 } BASE_SRV_SXS_SYSTEM_DEFAULT_ACTIVATION_CONTEXT, * PBASE_SRV_SXS_SYSTEM_DEFAULT_ACTIVATION_CONTEXT;
-*/
+
+
+
 //18
 typedef NTSTATUS(WINAPI* BasepConstructSxsCreateProcessMessage_)( 
     IN PUNICODE_STRING SxsNtExePath, //a1

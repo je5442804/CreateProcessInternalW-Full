@@ -159,6 +159,7 @@
     <ClInclude Include="ntapi.hpp" />
     <ClInclude Include="otherapi.hpp" />
     <ClInclude Include="structs.hpp" />
+    <ClInclude Include="sxssrv.hpp" />
     <ClInclude Include="syscalls.hpp" />
   </ItemGroup>
   <ItemGroup>

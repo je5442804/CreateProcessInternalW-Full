@@ -1,5 +1,5 @@
 #pragma once
-
+#define WIN32_NO_STATUS
 #include "structs.hpp"
 #include "csrss.hpp"
 
@@ -15,25 +15,38 @@
 
 #endif // DEBUG_PRINT
 
-
+#define HandleToULong( h ) ((ULONG)(ULONG_PTR)(h) )
+#define HandleToLong( h )  ((LONG)(LONG_PTR) (h) )
+#define ULongToHandle( ul ) ((HANDLE)(ULONG_PTR) (ul) )
+#define LongToHandle( h )   ((HANDLE)(LONG_PTR) (h) )
+#define PtrToUlong( p ) ((ULONG)(ULONG_PTR) (p) )
+#define PtrToLong( p )  ((LONG)(LONG_PTR) (p) )
+#define PtrToUint( p ) ((UINT)(UINT_PTR) (p) )
+#define PtrToInt( p )  ((INT)(INT_PTR) (p) )
+#define PtrToUshort( p ) ((unsigned short)(ULONG_PTR)(p) )
+#define PtrToShort( p )  ((short)(LONG_PTR)(p) )
+#define IntToPtr( i )    ((VOID *)(INT_PTR)((int)i))
+#define UIntToPtr( ui )  ((VOID *)(UINT_PTR)((unsigned int)ui))
+#define LongToPtr( l )   ((VOID *)(LONG_PTR)((long)l))
+#define ULongToPtr( ul ) ((VOID *)(ULONG_PTR)((unsigned long)ul))
 
 void CreateInfoOutPut(PS_CREATE_INFO CreateInfo);
 void SectionImageInfomationOutPut(SECTION_IMAGE_INFORMATION SectionImageInfomation);
 void BaseCreateProcessMessageOutPut(BASE_SXS_CREATEPROCESS_MSG BaseCreateProcessMessageSxs);
 
 BOOL WINAPI CreateProcessInternalW(
-    HANDLE hUserToken,
-    LPCWSTR lpApplicationName,
-    LPWSTR lpCommandLine,
-    LPSECURITY_ATTRIBUTES lpProcessAttributes,
-    LPSECURITY_ATTRIBUTES lpThreadAttributes,
-    BOOL bInheritHandles,
-    DWORD dwCreationFlags,
-    LPVOID lpEnvironment,
-    LPCWSTR lpCurrentDirectory,
-    LPSTARTUPINFOW lpStartupInfo,
-    LPPROCESS_INFORMATION lpProcessInformation,
-    PHANDLE hRestrictedUserToken
+	HANDLE hUserToken,
+	LPCWSTR lpApplicationName,
+	LPWSTR lpCommandLine,
+	LPSECURITY_ATTRIBUTES lpProcessAttributes,
+	LPSECURITY_ATTRIBUTES lpThreadAttributes,
+	BOOL bInheritHandles,
+	DWORD dwCreationFlags,
+	LPVOID lpEnvironment,
+	LPCWSTR lpCurrentDirectory,
+	LPSTARTUPINFOW lpStartupInfo,
+	LPPROCESS_INFORMATION lpProcessInformation,
+	PHANDLE hRestrictedUserToken
 );
 
 typedef _Null_terminated_ wchar_t* NTSTRSAFE_PWSTR;
@@ -183,7 +196,7 @@ typedef NTSTATUS(WINAPI* BasepGetAppCompatData_)(
 	PWSTR PackageName,
 	DWORD* ElevationFlags,
 	PACTIVATION_CONTEXT_RUN_LEVEL_INFORMATION ActivationContextRunLevel,// ACTIVATION_CONTEXT_RUN_LEVEL_INFORMATION
-	USHORT* SxsProcessorArchitecture,
+	PULONG SxsSupportedOSMajorVersion,
 	ULONGLONG* SxsMaxVersionTested,
 	PSECTION_IMAGE_INFORMATION SectionImageInfomation,
 	USHORT AppCompatImageMachine,
@@ -194,7 +207,7 @@ typedef NTSTATUS(WINAPI* BasepGetAppCompatData_)(
 	PVOID* AppCompatData,
 	DWORD* AppCompatDataSize
 	);
-typedef NTSTATUS(WINAPI* BasepInitAppCompatData_)(
+typedef BOOL(WINAPI* BasepInitAppCompatData_)(
 	HANDLE ProcessHandle,
 	PVOID AppCompatData,
 	DWORD AppCompatDataSize

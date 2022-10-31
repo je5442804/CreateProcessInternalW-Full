@@ -1,4 +1,5 @@
 #pragma once
+#define WIN32_NO_STATUS
 #include <Windows.h>
 #include <iostream>
 
@@ -157,6 +158,15 @@ typedef struct _STRING
 	USHORT MaximumLength;
 	_Field_size_bytes_part_opt_(MaximumLength, Length) PCHAR Buffer;
 } STRING, * PSTRING, ANSI_STRING, * PANSI_STRING, OEM_STRING, * POEM_STRING;
+
+typedef struct _STRING32
+{
+	USHORT Length;
+	USHORT MaximumLength;
+	ULONG Buffer;
+} STRING32, * PSTRING32;
+
+typedef STRING32 UNICODE_STRING32, * PUNICODE_STRING32;
 
 typedef STRING UTF8_STRING;
 typedef PSTRING PUTF8_STRING;
@@ -946,7 +956,7 @@ typedef struct _PORT_MESSAGE
 	};
 
 	ULONG_PTR MessageId;//24 shoudl be ULONG but I set ULONG_PTR ?
-					//28
+	//28
 	union
 	{
 		ULONGLONG ClientViewSize; // only valid for LPC_CONNECTION_REQUEST messages
@@ -1192,6 +1202,12 @@ typedef enum _OBJECT_INFORMATION_CLASS
 	ObjectHandleInformation
 } OBJECT_INFORMATION_CLASS, * POBJECT_INFORMATION_CLASS;
 
+typedef struct _FILE_ID_INFORMATION
+{
+	ULONGLONG VolumeSerialNumber;//0
+	FILE_ID_128 FileId;//8 GUID -> 16
+} FILE_ID_INFORMATION, * PFILE_ID_INFORMATION;//24
+
 typedef enum _FILE_INFORMATION_CLASS
 {
 	FileDirectoryInformation = 1, // FILE_DIRECTORY_INFORMATION
@@ -1309,6 +1325,46 @@ typedef struct _KCONTINUE_ARGUMENT
 } KCONTINUE_ARGUMENT, * PKCONTINUE_ARGUMENT;
 
 
+typedef enum _PS_PROTECTED_TYPE
+{
+	PsProtectedTypeNone,
+	PsProtectedTypeProtectedLight,
+	PsProtectedTypeProtected,
+	PsProtectedTypeMax
+} PS_PROTECTED_TYPE;
+
+typedef enum _PS_PROTECTED_SIGNER
+{
+	PsProtectedSignerNone,
+	PsProtectedSignerAuthenticode,
+	PsProtectedSignerCodeGen,
+	PsProtectedSignerAntimalware,
+	PsProtectedSignerLsa,
+	PsProtectedSignerWindows,
+	PsProtectedSignerWinTcb,
+	PsProtectedSignerWinSystem,
+	PsProtectedSignerApp,
+	PsProtectedSignerMax
+} PS_PROTECTED_SIGNER;
+
+#define PS_PROTECTED_SIGNER_MASK 0xFF
+#define PS_PROTECTED_AUDIT_MASK 0x08
+#define PS_PROTECTED_TYPE_MASK 0x07
+
+// vProtectionLevel.Level = PsProtectedValue(PsProtectedSignerCodeGen, FALSE, PsProtectedTypeProtectedLight)
+#define PsProtectedValue(aSigner, aAudit, aType) ( \
+    ((aSigner & PS_PROTECTED_SIGNER_MASK) << 4) | \
+    ((aAudit & PS_PROTECTED_AUDIT_MASK) << 3) | \
+    (aType & PS_PROTECTED_TYPE_MASK)\
+    )
+
+// InitializePsProtection(&vProtectionLevel, PsProtectedSignerCodeGen, FALSE, PsProtectedTypeProtectedLight)
+#define InitializePsProtection(aProtectionLevelPtr, aSigner, aAudit, aType) { \
+    (aProtectionLevelPtr)->Signer = aSigner; \
+    (aProtectionLevelPtr)->Audit = aAudit; \
+    (aProtectionLevelPtr)->Type = aType; \
+    }
+
 typedef struct _PS_PROTECTION
 {
 	union
@@ -1322,6 +1378,7 @@ typedef struct _PS_PROTECTION
 		};
 	};
 } PS_PROTECTION, * PPS_PROTECTION;
+
 
 typedef enum _PROCESSINFOCLASS
 {
@@ -1513,6 +1570,68 @@ typedef struct _RTL_USER_PROCESS_PARAMETERS
 	ULONG_PTR DefaultThreadpoolCpuSetMasks;
 	ULONG DefaultThreadpoolCpuSetMaskCount;
 } RTL_USER_PROCESS_PARAMETERS, * PRTL_USER_PROCESS_PARAMETERS;
+
+typedef struct _CURDIR32
+{
+	UNICODE_STRING32 DosPath;
+	WOW64_POINTER(HANDLE) Handle;
+} CURDIR32, * PCURDIR32;
+
+typedef struct _RTL_DRIVE_LETTER_CURDIR32
+{
+	USHORT Flags;
+	USHORT Length;
+	ULONG TimeStamp;
+	STRING32 DosPath;
+} RTL_DRIVE_LETTER_CURDIR32, * PRTL_DRIVE_LETTER_CURDIR32;
+
+typedef struct _RTL_USER_PROCESS_PARAMETERS32
+{
+	ULONG MaximumLength;
+	ULONG Length;
+
+	ULONG Flags;
+	ULONG DebugFlags;
+
+	WOW64_POINTER(HANDLE) ConsoleHandle;
+	ULONG ConsoleFlags;
+	WOW64_POINTER(HANDLE) StandardInput;
+	WOW64_POINTER(HANDLE) StandardOutput;
+	WOW64_POINTER(HANDLE) StandardError;
+
+	CURDIR32 CurrentDirectory;
+	UNICODE_STRING32 DllPath;
+	UNICODE_STRING32 ImagePathName;
+	UNICODE_STRING32 CommandLine;
+	WOW64_POINTER(PVOID) Environment;
+
+	ULONG StartingX;
+	ULONG StartingY;
+	ULONG CountX;
+	ULONG CountY;
+	ULONG CountCharsX;
+	ULONG CountCharsY;
+	ULONG FillAttribute;
+
+	ULONG WindowFlags;
+	ULONG ShowWindowFlags;
+	UNICODE_STRING32 WindowTitle;
+	UNICODE_STRING32 DesktopInfo;
+	UNICODE_STRING32 ShellInfo;
+	UNICODE_STRING32 RuntimeData;
+	RTL_DRIVE_LETTER_CURDIR32 CurrentDirectories[RTL_MAX_DRIVE_LETTERS];
+
+	WOW64_POINTER(ULONG_PTR) EnvironmentSize;
+	WOW64_POINTER(ULONG_PTR) EnvironmentVersion;
+	WOW64_POINTER(PVOID) PackageDependencyData;
+	ULONG ProcessGroupId;
+	ULONG LoaderThreads;
+
+	UNICODE_STRING32 RedirectionDllName; // REDSTONE4
+	UNICODE_STRING32 HeapPartitionName; // 19H1
+	WOW64_POINTER(ULONG_PTR) DefaultThreadpoolCpuSetMasks;
+	ULONG DefaultThreadpoolCpuSetMaskCount;
+} RTL_USER_PROCESS_PARAMETERS32, * PRTL_USER_PROCESS_PARAMETERS32;
 
 #define RTL_USER_PROC_PARAMS_NORMALIZED 0x00000001
 #define RTL_USER_PROC_PROFILE_USER 0x00000002
@@ -2285,14 +2404,7 @@ typedef struct _PEB
 	ULONGLONG ExtendedFeatureDisableMask; // since WIN11
 } PEB, * PPEB;
 
-typedef struct _STRING32
-{
-	USHORT Length;
-	USHORT MaximumLength;
-	ULONG Buffer;
-} STRING32, * PSTRING32;
 
-typedef STRING32 UNICODE_STRING32, * PUNICODE_STRING32;
 typedef struct _PEB32
 {
 	BOOLEAN InheritedAddressSpace;
@@ -3224,18 +3336,18 @@ class ExtendedAppExecutionAliasInfo
 public:
 
 	//private:
-	PWSTR AppXPackageName;//0 WCHAR [256]
-	LPCWSTR AppAliasBaseImagePath;//8
-	HANDLE TokenHandle;//16
-	LPCWSTR BreakawayCommandeLine;//24
-	BOOL BreakawayModeLaunch;//32
+	PWSTR AppXPackageName = NULL;//0 WCHAR [256]
+	LPCWSTR AppAliasBaseImagePath = NULL;//8
+	HANDLE TokenHandle = NULL;//16
+	LPCWSTR BreakawayCommandeLine = NULL;//24
+	BOOL BreakawayModeLaunch = FALSE;//32
 	std::wstring PresentRawImagePath;//40 -- 48
 	std::wstring AppXPackageName2;//72 -- 80
 	std::wstring AppAliasLaunchImagePath2;//104 -- 112
-	HANDLE TokenHandle2;//136 FileHandle???
+	HANDLE TokenHandle2 = NULL;//136 FileHandle???
 	std::wstring Commandline;//144
 	//DesktopAppXActivationInfo 176 + 8
-	PDESKTOP_APPX_ACTIVATION_INFO DesktopAppXActivationInfo;//176
+	PDESKTOP_APPX_ACTIVATION_INFO DesktopAppXActivationInfo = NULL;//176
 
 	ExtendedAppExecutionAliasInfo(LPCWSTR ImagePath = NULL, PVOID Unknow = NULL) {};
 	BOOLEAN Load(HANDLE TokenHandle) {}; //BOOLEAN Load(ExtendedAppExecutionAliasInfo ,HANDLE TokenHandle);
@@ -3246,17 +3358,23 @@ class ExtendedAppExecutionAliasInfo_New
 public:
 
 	//private:
-	PWSTR AppXPackageName;//0 WCHAR [256]
-	LPCWSTR AppAliasBaseImagePath;//8
-	HANDLE TokenHandle;//16
-	LPCWSTR BreakawayCommandeLine;//24
-	BOOL BreakawayModeLaunch;//32
-	PWSTR AppExecutionAliasRedirectPackages;//40
+	PWSTR AppXPackageName = NULL;//0 WCHAR [256]
+	LPCWSTR AppAliasBaseImagePath = NULL;//8
+	HANDLE TokenHandle = NULL;//16
+	LPCWSTR BreakawayCommandeLine = NULL;//24
+	BOOL BreakawayModeLaunch = FALSE;//32
+	PWSTR AppExecutionAliasRedirectPackages = NULL;//40
 	std::wstring PresentRawImagePath;//48
 	std::wstring AppXPackageName2;//80
 	std::wstring AppAliasLaunchImagePath2;//112
 	std::wstring Unknow;//144
-	HANDLE TokenHandle2;//176 FileHandle???
+	HANDLE TokenHandle2 = NULL;//176 FileHandle???
 	std::wstring Commandline;//184
-	PDESKTOP_APPX_ACTIVATION_INFO DesktopAppXActivationInfo;//216
+	PDESKTOP_APPX_ACTIVATION_INFO DesktopAppXActivationInfo = NULL;//216
 }; //224
+
+
+// STARTF_?? = 0x10000  (holographic/VR related ???) since win 10 1903 [18362]
+// STARTF_HOLOLENAPPFASTMODE ??????
+// https://learn.microsoft.com/en-us/hololens/hololens-release-notes [Microsoft Windows Hololens 2]
+#define STARTF_HOLOLENAPPNOWAIT 0x00010000 //Fake define lol, Do NOT care about it [uncorrected]

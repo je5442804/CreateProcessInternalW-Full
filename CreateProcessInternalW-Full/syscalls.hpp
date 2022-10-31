@@ -1,5 +1,6 @@
 #pragma once
 
+#define WIN32_NO_STATUS
 #ifndef SW3_HEADER_H_
 #define SW3_HEADER_H_
 
@@ -16,16 +17,16 @@
 
 typedef struct _SW3_SYSCALL_ENTRY
 {
-    DWORD Hash;
-    DWORD Address;
+	DWORD Hash;
+	DWORD Address;
 	PVOID SyscallAddress;
-} SW3_SYSCALL_ENTRY, *PSW3_SYSCALL_ENTRY;
+} SW3_SYSCALL_ENTRY, * PSW3_SYSCALL_ENTRY;
 
 typedef struct _SW3_SYSCALL_LIST
 {
-    DWORD Count;
-    SW3_SYSCALL_ENTRY Entries[SW3_MAX_ENTRIES];
-} SW3_SYSCALL_LIST, *PSW3_SYSCALL_LIST;
+	DWORD Count;
+	SW3_SYSCALL_ENTRY Entries[SW3_MAX_ENTRIES];
+} SW3_SYSCALL_LIST, * PSW3_SYSCALL_LIST;
 
 DWORD SW3_HashSyscall(PCSTR FunctionName);
 BOOL SW3_PopulateSyscallList();

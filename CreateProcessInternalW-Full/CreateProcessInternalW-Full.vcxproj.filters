@@ -44,6 +44,9 @@
     <ClInclude Include="csrss.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="sxssrv.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="syscalls.asm">

@@ -1,5 +1,5 @@
 #pragma once
-
+#define WIN32_NO_STATUS
 #include "structs.hpp"
 #include "csrss.hpp"
 
