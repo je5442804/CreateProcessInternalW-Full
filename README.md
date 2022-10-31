@@ -7,7 +7,8 @@ __Explorer Attack Surface and the New Techniques relate to this as far as you ca
 __or it's useless for you.__  
 
 ## Tested on (x64 only)  
-Windows 11 21H2 x64 (22000.795)  
+Windows 11 21H2 x64 (22000.795/22000.1098)  
+Windows 10 22H2 x64 (19045.2130)  
 Windows 10 21H2 x64 (19044.1826)  
 
 ## Example
@@ -20,8 +21,26 @@ __CreateProcessInternalW-Full.exe  (ImageName)__
 Visual Studio 2022  
 __Relase x64__  
 
+## Tips
+In recent years Qihoo 360 has make a great defense in "ProcessAttack Protection"  
+With the Core Crystal Protection Engine (Intel VT / AMD-V) 360 make the Process Detection Powerful.  
+It's seem that public techniques of Process Injection already be killed, No universal techniques to bypasss.  
+(Some uncommon technique bypass it, but huge limition...)  
+
+Someone try to use VM Environment spoof or Incompatible Drivers to make a fool of 360,  
+which enforce to disable or adjust Core Crystal Engine by 360Safe itself.  
+Yeah, there is no way to bypass the Behavior Detection: "I'm just afraid of your detect, shutdown your Core Crystal Engine lol :(".  
+
+This technique isn't good enough, what if I say that:  
+at least two universal, undisclosed, different types technologies (probably work well before Vista or not?) completely bypass Behavior Detection to  
+inject Remote Process when Core Crystal Engine is running normally.  
+Both of them work well on Windows Vista to Windows 11.  
+  
+(perhaps it's less related my repo?)  Ovo?  
+(What does it mean that bypass Qihoo 360 Process Inject Detection base on Core Crystal Engine?)  
+  
 ## References && Credits  
-Special Thank to MeeSong for his excellent project  
+Special Thank to MeeSong for his [__Excellent Project__](https://github.com/MeeSong/Reverse-Engineering/tree/master/CreateProcessInternal)  
   
 24: https://github.com/MeeSong/Reverse-Engineering/blob/master/CreateProcessInternal  
 25: https://github.com/diversenok/NtUtilsLibrary  
@@ -39,4 +58,3 @@ Special Thank to MeeSong for his excellent project
 37: https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/c8e77b37-3909-4fe6-a4ea-2b9d423b1ee4  
 38: https://stackoverflow.com/questions/62474046/how-do-i-find-the-target-of-a-windows-app-execution-alias-in-c-win32-api  
 39: https://stackoverflow.com/questions/71697488/follow-hard-links-reparsepoints-to-files-windows-terminal  
-  
