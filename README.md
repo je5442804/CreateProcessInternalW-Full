@@ -1,7 +1,6 @@
 # CreateProcessInternalW-Full  
-Reimplement CreateProcessInternalW via Windows 10 20H1+  
+Reimplement CreateProcessInternalW via Windows 10 20H1+ and Windows 11.   
 Base on [__NtCreateUserProcess-Post__](https://github.com/je5442804/NtCreateUserProcess-Post)  
-emmmm it should be release in early July. However something happened to me.  
   
 __Explorer Attack Surface and the New Techniques relate to this as far as you can,__  
 __or it's useless for you.__  
@@ -24,8 +23,8 @@ __Relase x64__
 ## Tips
 In recent years Qihoo 360 has make a great defense in "ProcessAttack Protection"  
 With the Core Crystal Protection Engine (Intel VT / AMD-V) 360 make the Process Detection Powerful.  
-It's seem that public techniques of Process Injection already be killed, No universal techniques to bypasss.  
-(Some uncommon technique bypass it, but huge limition...)  
+~~It's seem that public techniques of Process Injection already be killed, No universal techniques to bypasss.~~  
+~~(Some uncommon technique bypass it, but huge limition...)~~  
 
 Someone try to use VM Environment spoof or Incompatible Drivers to make a fool of 360,  
 which enforce to disable or adjust Core Crystal Engine by 360Safe itself.  
@@ -38,6 +37,7 @@ Both of them work well on Windows Vista to Windows 11.
   
 (perhaps it's less related my repo?)  Ovo?  
 (What does it mean that bypass Qihoo 360 Process Inject Detection base on Core Crystal Engine?)  
+__OMG! The others' amazingly different research [PoolParty](https://github.com/SafeBreach-Labs/PoolParty) should be respected!__  
   
 ## References && Credits  
 Special Thank to MeeSong for his [__Excellent Project__](https://github.com/MeeSong/Reverse-Engineering/tree/master/CreateProcessInternal)  
@@ -58,3 +58,46 @@ Special Thank to MeeSong for his [__Excellent Project__](https://github.com/MeeS
 37: https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/c8e77b37-3909-4fe6-a4ea-2b9d423b1ee4  
 38: https://stackoverflow.com/questions/62474046/how-do-i-find-the-target-of-a-windows-app-execution-alias-in-c-win32-api  
 39: https://stackoverflow.com/questions/71697488/follow-hard-links-reparsepoints-to-files-windows-terminal  
+  
+(AppCompat ShimEngine Ex)  
+40: https://github.com/EricZimmerman/SDB  
+41: https://www.alex-ionescu.com/secrets-of-the-application-compatilibity-database-sdb-part-1/  
+42: https://www.alex-ionescu.com/secrets-of-the-application-compatilibity-database-sdb-part-2/  
+43: https://www.alex-ionescu.com/secrets-of-the-application-compatilibity-database-sdb-part-3/  
+44: https://www.alex-ionescu.com/secrets-of-the-application-compatilibity-database-sdb-part-4/  
+45: https://ss64.org/viewtopic.php?t=18  
+46: https://gist.github.com/riverar/7de4bae1162858b1966e37b335dd24c8  
+47: https://github.com/heaths/sdb2xml  
+48: https://withinrafael.com/  
+49: https://sdb.tools/resources.html  
+50: https://reactos.org/wiki/User:Learn_more/Appcompat  
+51: https://github.com/vatsan-madhavan/WpfAppCompatQuirks/tree/master  
+52: https://github.com/mbevilacqua/appcompatprocessor  
+53: https://www.tiraniddo.dev/2019/02/a-brief-history-of-basenamedobjects-on.html  
+  
+(Console & Pseudo Pty)  
+54: https://www.coresecurity.com/core-labs/articles/running-pes-inline-without-console  
+55: https://github.com/jfhs/handterm/blob/master/src/handterm.cpp#L2278  
+56: https://github.com/adamyg/winxsh/blob/master/rlogind/ConPty.cpp  
+57: https://github.com/microsoft/terminal/blob/main/src/server/Entrypoints.cpp  
+58: https://learn.microsoft.com/en-us/windows/console/  
+59: https://devblogs.microsoft.com/commandline/windows-command-line-introducing-the-windows-pseudo-console-conpty/  ->OpenSSH For Windows  
+60: https://github.com/microsoft/terminal/issues/11276  
+  
+(Attribute List? sxs?)   
+61: https://learn.microsoft.com/zh-cn/windows/win32/sbscs/installing-side-by-side-assemblies  
+62: https://techcommunity.microsoft.com/t5/msix/are-child-processes-quot-break-away-quot-or-not-by-default/m-p/1671578  
+63: https://techcommunity.microsoft.com/t5/msix/msix-breakaway-in-22h2-win-10-11/m-p/4006620  
+64: https://big5-sec.github.io/posts/component-filter-mitigation/  
+65: https://source.chromium.org/chromium/chromium/src/+/main:sandbox/win/src/startup_information_helper.cc;l=184;drc=af2ce820de3267752a75f21f7d05d674955dd27c?q=PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY&sq=&ss=chromium%2Fchromium%2Fsrc  
+  
+(I don't know what the RE)  
+66: https://dev.to/armsofsorrow/taking-a-look-inside-the-hololens-2-emulator-36e7  
+67: https://github.com/gus33000/UUPMediaCreator/issues/189  
+68: https://github.com/Empyreal96/W10M_Toolbox  
+69: https://github.com/Empyreal96/WP_Common_Tools  
+70: https://www.matteomalvica.com/blog/2021/03/10/practical-re-win-solutions-ch3-work-items/  
+71: https://bbs.kanxue.com/thread-270131.htm  
+72: https://www.mandiant.com/resources/blog/finding-evil-in-windows-ten-compressed-memory-part-one 内存压缩  
+
+2024 Already in place  
