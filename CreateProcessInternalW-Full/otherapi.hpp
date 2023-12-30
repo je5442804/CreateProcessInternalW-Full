@@ -1,5 +1,7 @@
-#pragma once
-#define WIN32_NO_STATUS
+﻿#pragma once
+#define UMDF_USING_NTSTATUS
+
+#include <ntstatus.h>
 #include "structs.hpp"
 #include "csrss.hpp"
 
@@ -30,9 +32,40 @@
 #define LongToPtr( l )   ((VOID *)(LONG_PTR)((long)l))
 #define ULongToPtr( ul ) ((VOID *)(ULONG_PTR)((unsigned long)ul))
 
+#define ULongToPeb32Ptr( ul ) ((PPEB32)(ULONG_PTR)((unsigned long)ul))
+
 void CreateInfoOutPut(PS_CREATE_INFO CreateInfo);
 void SectionImageInfomationOutPut(SECTION_IMAGE_INFORMATION SectionImageInfomation);
 void BaseCreateProcessMessageOutPut(BASE_SXS_CREATEPROCESS_MSG BaseCreateProcessMessageSxs);
+NTSTATUS ValidateAppExecutionAliasRedirectPackageIdentity(HANDLE KeyHandle, ExtendedAppExecutionAliasInfo_New * AppExecutionAliasInfo);
+NTSTATUS  BasepConvertWin32AttributeList(
+	LPPROC_THREAD_ATTRIBUTE_LIST lpAttributeList,
+	BOOLEAN ConvertType, //BOOLEAN IsCreateThread
+	PULONG ExtendedFlags,
+	PUNICODE_STRING PackageFullName,
+	PSECURITY_CAPABILITIES * SecurityCapabilities,
+	BOOLEAN * HasHandleList,
+	PHANDLE ParentProcessHandle,
+	CONSOLE_REFERENCE * ConsoleHandleInfo,
+	PPS_MITIGATION_OPTIONS_MAP MitigationOptions,
+	PPS_MITIGATION_AUDIT_OPTIONS_MAP MitigationAuditOptions,
+	PWIN32K_SYSCALL_FILTER Win32kFilter,//11
+	...
+	//PULONG AllApplicationPackagesPolicyFlags,//12
+	//PULONG ComponentFilter,
+	//PMAXVERSIONTESTED_INFO MaxVersionTested,
+	//PPS_BNO_ISOLATION_PARAMETERS BnoIsolation,
+	//DWORD * DesktopAppPolicy,
+	//PISOLATION_MANIFEST_PROPERTIES IsolationManifest,
+	//PUNICODE_STRING UnknowStringProcThread20,//
+	//ULONG_PTR * UnknowPVOIDProcThread21,//
+	//PPS_TRUSTLET_CREATE_ATTRIBUTES TrustletAttributes,
+	//PULONG ProcessFlags,//
+	//PPS_ATTRIBUTE_LIST AttributeList,
+	//PULONG AttributeListCount,
+	//IN OPTIONAL ULONG ProcThreadAttributeMaxCount
+);
+
 
 BOOL WINAPI CreateProcessInternalW(
 	HANDLE hUserToken,
@@ -71,8 +104,7 @@ typedef _Null_terminated_ wchar_t* NTSTRSAFE_PWSTR;
 //#define GetCurrentTickCount() ((DWORD)((SharedUserData->TickCountMultiplier * (ULONGLONG)SharedUserData->TickCount.LowPart) >> 24))
 
 typedef DWORD(WINAPI* BaseSetLastNTError_)(IN NTSTATUS Status);
-
-typedef DWORD(NTAPI* RtlSetLastWin32Error_)(IN ULONG LastError);
+typedef DWORD(NTAPI* RtlSetLastWin32Error_)(IN LONG LastError);
 
 typedef VOID(NTAPI* RtlInitUnicodeString_)(PUNICODE_STRING DestinationString, PCWSTR SourceString);
 
@@ -101,13 +133,13 @@ typedef PRTL_USER_PROCESS_PARAMETERS(NTAPI* BasepCreateProcessParameters_)(
 	PWSTR CommandLine,
 	LPCWSTR AppXDllDirectory,
 	LPCWSTR AppXRedirectionDllName,
-	BOOLEAN IsPackage,//BOOLEAN
+	BOOLEAN IsPackage,// NewProcess is
 	PVOID Environment,
 	LPSTARTUPINFOW StartInfo,
 	ULONG dwCreationFlags,
 	BOOL DefaultInheritOnly,
 	ULONG ProcessFlags,
-	PCONSOLE_HANDLE_INFO ConsoleHandle,
+	PCONSOLE_REFERENCE ConsoleHandle,
 	HANDLE ParentProcessHandle
 	);
 
@@ -148,29 +180,54 @@ typedef BOOL(WINAPI* BuildSubSysCommandLine_)(
 	PUNICODE_STRING SubSysCommandLine
 	);
 typedef HANDLE(WINAPI* BasepGetConsoleHost_)();
+
 typedef NTSTATUS(WINAPI* BasepConvertWin32AttributeList_)(
 	LPPROC_THREAD_ATTRIBUTE_LIST lpAttributeList,
-	BOOLEAN IsThread,
+	BOOLEAN ConvertType, //BOOLEAN IsCreateThread
 	PULONG ExtendedFlags,
 	PUNICODE_STRING PackageFullName,
 	PSECURITY_CAPABILITIES* SecurityCapabilities,
 	BOOLEAN* HasHandleList,
 	PHANDLE ParentProcessHandle,
-	CONSOLE_HANDLE_INFO* ConsoleHandleInfo,
+	CONSOLE_REFERENCE* ConsoleHandleInfo,
 	PPS_MITIGATION_OPTIONS_MAP MitigationOptions,
 	PPS_MITIGATION_AUDIT_OPTIONS_MAP MitigationAuditOptions,
 	PWIN32K_SYSCALL_FILTER Win32kFilter,
+	...
+	);
+
+
+
+
+/*
+typedef NTSTATUS(WINAPI* BasepConvertWin32AttributeList_)(
+	LPPROC_THREAD_ATTRIBUTE_LIST lpAttributeList,
+	BOOLEAN ConvertType, //BOOLEAN IsCreateThread
+	PULONG ExtendedFlags,
+	PUNICODE_STRING PackageFullName,
+	PSECURITY_CAPABILITIES * SecurityCapabilities,
+	BOOLEAN * HasHandleList,
+	PHANDLE ParentProcessHandle,
+	CONSOLE_REFERENCE * ConsoleHandleInfo,
+	PPS_MITIGATION_OPTIONS_MAP MitigationOptions,
+	PPS_MITIGATION_AUDIT_OPTIONS_MAP MitigationAuditOptions,
+	PWIN32K_SYSCALL_FILTER Win32kFilter,//11
+
+	PULONG AllApplicationPackagesPolicyFlags,//
 	PULONG ComponentFilter,
 	PMAXVERSIONTESTED_INFO MaxVersionTested,
 	PPS_BNO_ISOLATION_PARAMETERS BnoIsolation,
-	DWORD* DesktopAppPolicy,
+	DWORD * DesktopAppPolicy,
 	PISOLATION_MANIFEST_PROPERTIES IsolationManifest,
-	PUNICODE_STRING PackageFullName2,
-	PPS_TRUSTLET_ATTRIBUTE_DATA Trustlet,
+	PUNICODE_STRING UnknowStringProcThread20,//
+	ULONG_PTR * UnknowPVOIDProcThread21,//
+	PPS_TRUSTLET_CREATE_ATTRIBUTES TrustletAttributes,
+	PULONG ProcessFlags,//
 	PPS_ATTRIBUTE_LIST AttributeList,
 	PULONG AttributeListCount,
-	ULONG ProcThreadAttributeMax
-	);
+	IN OPTIONAL ULONG ProcThreadAttributeMaxCount
+);
+*/
 typedef NTSTATUS(WINAPI* BasepQueryAppCompat_)(
 	PSECTION_IMAGE_INFORMATION SectionImageInfomation,
 	BOOL AddressSpaceOverride,
@@ -180,13 +237,13 @@ typedef NTSTATUS(WINAPI* BasepQueryAppCompat_)(
 	PWSTR Win32ImageName,
 	PVOID Environment,
 	PUNICODE_STRING PackageFullName,
-	PVOID* AppCompatCacheData,
-	DWORD* AppCompatCacheDataSize,
+	PSDBQUERYRESULT* SdbQueryResult,
+	DWORD* SdbQueryResultSize,
 	PVOID* AppCompatSxsData,
 	DWORD* AppCompatSxsDataSize,
-	BOOL* AppCompatSxsSafeMode,             // 13
-	ULONGLONG* AppCompatPrivilegeFlags,            // 14
-	DWORD* UnknowCompatCache3,             // 15
+	ULONG* dwFusionFlags,             // 13
+	COAMPAT_FIX_FLAG* dwLuaRunlevelFlags,            // 14 ULONGLONG
+	DWORD* dwInstallerFlags,             // 15
 	USHORT* ImageMachine,
 	PMAXVERSIONTESTED_INFO MaxVersionTested, //PackageOnly
 	DWORD* DeviceFamilyID //PackageOnly
@@ -196,14 +253,14 @@ typedef NTSTATUS(WINAPI* BasepGetAppCompatData_)(
 	PWSTR PackageName,
 	DWORD* ElevationFlags,
 	PACTIVATION_CONTEXT_RUN_LEVEL_INFORMATION ActivationContextRunLevel,// ACTIVATION_CONTEXT_RUN_LEVEL_INFORMATION
-	PULONG SxsSupportedOSMajorVersion,
+	PSUPPORTED_OS_INFO SxsSupportedOSMajorVersion,
 	ULONGLONG* SxsMaxVersionTested,
 	PSECTION_IMAGE_INFORMATION SectionImageInfomation,
 	USHORT AppCompatImageMachine,
 	ULONGLONG MaxVersionTested,
 	DWORD DeviceFamilyID,
-	PVOID* AppCompatCacheData, //AppCompatCacheData
-	DWORD* AppCompatCacheDataSize,
+	PSDBQUERYRESULT* SdbQueryResult,
+	DWORD* SdbQueryResultSize,
 	PVOID* AppCompatData,
 	DWORD* AppCompatDataSize
 	);
@@ -217,7 +274,7 @@ typedef NTSTATUS(WINAPI* BasepUpdateProcessParametersField_)(
 	IN HANDLE ProcessHandle,
 	IN PVOID ValuePointer,
 	IN SIZE_T NumberOfBytesToWrite,
-	OUT PVOID ValueFix,//???????
+	OUT PVOID ValueFix,
 	IN ULONGLONG ProcessParametersOffset,
 	IN ULONG ProcessParametersWow64Offset,
 	IN PPS_CREATE_INFO CreateInfo
@@ -227,20 +284,20 @@ typedef NTSTATUS(WINAPI* BaseCheckElevation_)(
 	IN HANDLE FileHandle,
 	IN LPCWSTR Win32ImagePath,
 	IN OUT DWORD* BaseElevationFlags,
-	IN ULONGLONG AppCompatPrivilegeFlags,
+	IN COAMPAT_FIX_FLAG dwLuaRunlevelFlags,  //AppCompatFixFlags ULONGLONG
 	IN OUT PACTIVATION_CONTEXT_RUN_LEVEL_INFORMATION ActivationContextRunLevel,
-	IN PUNICODE_STRING AssemblyIdentity,
-	IN DWORD UnknowCompatCache3,
+	IN PUNICODE_STRING AssemblyName,
+	IN DWORD dwInstallerFlags,
 	IN HANDLE TokenHandle,
-	OUT DWORD* RunLevel,
-	OUT DWORD* ElevateReason
+	OUT DWORD* pdwRunLevel,
+	OUT DWORD* pdwElevateReason
 	);
-typedef DWORD(WINAPI* BasepGetPackageActivationTokenForSxS_)(
+typedef LONG(WINAPI* BasepGetPackageActivationTokenForSxS_)(
 	PVOID PackageActivationSxsInfo,
 	HANDLE TokenHandle,
 	PHANDLE ActivationToken
 	);
-typedef LONG(WINAPI* GetPackageFullNameFromToken_)(
+typedef LONG(WINAPI* GetPackageFullNameFromToken__)(
 	_In_ HANDLE token,
 	_Inout_ UINT32* packageFullNameLength,
 	_Out_writes_opt_(*packageFullNameLength) PWSTR packageFullName
@@ -263,11 +320,11 @@ typedef NTSTATUS(WINAPI* LoadAppExecutionAliasInfoForExecutable_)(
 	HANDLE TokenHandle,
 	HANDLE ProcessHeap,
 	ExtendedAppExecutionAliasInfo** AppExecutionAliasInfo);
-typedef DWORD(WINAPI* GetAppExecutionAliasPath_)(PWSTR Win32ImagePath, HANDLE TokenHandle, PWSTR OutAliasPath, DWORD* Length);
+typedef LONG(WINAPI* GetAppExecutionAliasPath_)(PWSTR Win32ImagePath, HANDLE TokenHandle, PWSTR OutAliasPath, DWORD* Length);
 typedef NTSTATUS(WINAPI* LoadAppExecutionAliasInfoEx_)(PWSTR DosPath, HANDLE TokenHandle, ExtendedAppExecutionAliasInfo** AppExecutionAliasInfo);
 typedef NTSTATUS(WINAPI* ValidateAppXAliasFallback_)(LPCWSTR lpFileName, PVOID AppExecutionAliasInfo);
 typedef VOID(WINAPI* BasepReleaseAppXContext_)(PVOID AppXContent);
-typedef BOOLEAN(WINAPI* BasepFreeAppCompatData_)(PVOID AppCompatData, PVOID AppCompatSxsData, PVOID AppCompatCacheData);
+typedef BOOLEAN(WINAPI* BasepFreeAppCompatData_)(PVOID AppCompatData, PVOID AppCompatSxsData, PVOID SdbQueryResult);
 typedef BOOLEAN(WINAPI* BasepReleaseSxsCreateProcessUtilityStruct_)(PSXS_CREATEPROCESS_UTILITY SxsCreateProcessUtilityStruct);
 typedef BOOLEAN(WINAPI* BasepFreeBnoIsolationParameter_)(PPS_BNO_ISOLATION_PARAMETERS BnoIsolationParameter);
 
@@ -310,7 +367,9 @@ typedef NTSTATUS(WINAPI* AppModelPolicy_GetPolicy_Internal_)(
 
 typedef BOOL(WINAPI* BaseIsDosApplication_)(PUNICODE_STRING NtImageName);
 typedef NTSTATUS(WINAPI* BasepCheckWinSaferRestrictions_)(HANDLE TokenHandle, LPCWSTR lpApplicationName, HANDLE FileHandle, PUNICODE_STRING PackageFullName);
-typedef BOOLEAN(WINAPI* IsPresentFunction)(void);
+typedef BOOLEAN(WINAPI* ApiSetCheckFunction)(void);
+
+
 
 typedef PULONG(WINAPI* KernelBaseGetGlobalData_)(void);
 typedef VOID(WINAPI* RaiseInvalid16BitExeError_)(PUNICODE_STRING NtImageName);
@@ -360,7 +419,7 @@ typedef NTSTATUS(WINAPI* BasepPostSuccessAppXExtension_)(HANDLE ProcessHandle, P
 typedef NTSTATUS(WINAPI* CompleteAppExecutionAliasProcessCreationEx_)(
 	HANDLE ProcessHandle1,
 	HANDLE ThreadHandle1,
-	DWORD UWPLaunchMode,
+	BOOL UWPLaunchMode,//DWORD - ULONG
 	LPCWSTR lpCurrentDirectory1,
 	LPCWSTR lpCommandLine,
 	HANDLE TokenHandle,

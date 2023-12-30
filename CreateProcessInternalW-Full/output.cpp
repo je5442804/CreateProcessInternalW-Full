@@ -1,5 +1,6 @@
+﻿#include <stdio.h>
 #include "otherapi.hpp"
-#include <stdio.h>
+
 
 void CreateInfoOutPut(PS_CREATE_INFO CreateInfo)
 {
@@ -14,7 +15,7 @@ void CreateInfoOutPut(PS_CREATE_INFO CreateInfo)
 	wprintf(L"CreateInfo.ProhibitedImageCharacteristics: 0x%08x\n", CreateInfo.InitState.u1.s1.ProhibitedImageCharacteristics);
 	*/
 	//wprintf(L"==================================================================\n");
-	wprintf(L"CreateInfo.OutputFlags: 0x%08x\n", CreateInfo.SuccessState.u2.OutputFlags);
+	wprintf(L"CreateInfo.OutputFlags: 0x%08lx\n", CreateInfo.SuccessState.u2.OutputFlags);
 	wprintf(L"CreateInfo.ProtectedProcess: %d\n", CreateInfo.SuccessState.u2.s2.ProtectedProcess);
 	wprintf(L"CreateInfo.ProtectedProcessLight: %d\n", CreateInfo.SuccessState.u2.s2.ProtectedProcessLight);
 	wprintf(L"CreateInfo.AddressSpaceOverride: %d\n", CreateInfo.SuccessState.u2.s2.AddressSpaceOverride);
@@ -29,52 +30,68 @@ void CreateInfoOutPut(PS_CREATE_INFO CreateInfo)
 	wprintf(L"CreateInfo.UserProcessParametersNative: 0x%p\n", (PVOID)CreateInfo.SuccessState.UserProcessParametersNative);
 
 	if (CreateInfo.SuccessState.UserProcessParametersWow64)
-		wprintf(L"CreateInfo.UserProcessParametersWow64: 0x%x\n", CreateInfo.SuccessState.UserProcessParametersWow64);
+		wprintf(L"CreateInfo.UserProcessParametersWow64: 0x%p\n", UlongToPtr(CreateInfo.SuccessState.UserProcessParametersWow64));
 
 	wprintf(L"CreateInfo.CurrentParameterFlags: 0x%08lx\n", CreateInfo.SuccessState.CurrentParameterFlags);
 	wprintf(L"CreateInfo.PebAddressNative: 0x%p\n", (PVOID)CreateInfo.SuccessState.PebAddressNative);
 
 	if (CreateInfo.SuccessState.PebAddressWow64)
-		wprintf(L"CreateInfo.PebAddressWow64: 0x%x\n", CreateInfo.SuccessState.PebAddressWow64);
+		wprintf(L"CreateInfo.PebAddressWow64: 0x%p\n", UlongToPtr(CreateInfo.SuccessState.PebAddressWow64));
 
 	wprintf(L"CreateInfo.ManifestAddress: 0x%p\n", (PVOID)CreateInfo.SuccessState.ManifestAddress);
 	wprintf(L"CreateInfo.ManifestSize: %ld\n", CreateInfo.SuccessState.ManifestSize);
 	//wprintf(L"------------------------------------------------------------------\n");
-	wprintf(L"\nCreateInfo.ExeFormat.DllCharacteristics: 0x%08x\n", CreateInfo.ExeFormat.DllCharacteristics);
 	wprintf(L"==================================================================\n");
 }
+
 void SectionImageInfomationOutPut(SECTION_IMAGE_INFORMATION SectionImageInfomation)
 {
-	wprintf(L"ImageInformation.Machine: %d\n", SectionImageInfomation.Machine);
-	wprintf(L"ImageInformation.SubSystemType: %d\n", SectionImageInfomation.SubSystemType);
-	wprintf(L"ImageInformation.SubSystemMinorVersion: %d\n", SectionImageInfomation.SubSystemMinorVersion);
-	wprintf(L"ImageInformation.SubSystemMajorVersion: %d\n", SectionImageInfomation.SubSystemMajorVersion);
-	wprintf(L"ImageInformation.SubSystemVersion: %d\n", SectionImageInfomation.SubSystemVersion);
-	wprintf(L"ImageInformation.MajorOperatingSystemVersion: %d\n", SectionImageInfomation.MajorOperatingSystemVersion);
-	wprintf(L"ImageInformation.MinorOperatingSystemVersion: %d\n", SectionImageInfomation.MinorOperatingSystemVersion);
-	wprintf(L"ImageInformation.OperatingSystemVersion: %d\n", SectionImageInfomation.OperatingSystemVersion);
-	wprintf(L"ImageInformation.ImageFileSize: %d\n", SectionImageInfomation.ImageFileSize);
+	wprintf(L"ImageInformation.Machine: 0x%hx\n", SectionImageInfomation.Machine);
+	wprintf(L"ImageInformation.SubSystemType: %ld\n", SectionImageInfomation.SubSystemType);
+	//(Major.Minor)
+	wprintf(L"ImageInformation.SubSystemVersion: %hd.%hd\n", SectionImageInfomation.SubSystemMajorVersion, SectionImageInfomation.SubSystemMinorVersion);
+	wprintf(L"ImageInformation.OperatingSystemVersion: %hd.%hd\n", SectionImageInfomation.MajorOperatingSystemVersion, SectionImageInfomation.MinorOperatingSystemVersion);
+
+	wprintf(L"ImageInformation.ImageFileSize: %ld\n", SectionImageInfomation.ImageFileSize);
 	wprintf(L"ImageInformation.TransferAddress: 0x%p\n", SectionImageInfomation.TransferAddress);
-	wprintf(L"ImageInformation.LoaderFlags: %d\n", SectionImageInfomation.LoaderFlags);
-	wprintf(L"ImageInformation.DllCharacteristics: 0x%08x\n", SectionImageInfomation.DllCharacteristics);
+	//wprintf(L"ImageInformation.LoaderFlags: %ld\n", SectionImageInfomation.LoaderFlags);
+	wprintf(L"ImageInformation.DllCharacteristics: 0x%04hX\n", SectionImageInfomation.DllCharacteristics);
 	wprintf(L"============================================================================================\n");
 }
+
 void BaseCreateProcessMessageOutPut(BASE_SXS_CREATEPROCESS_MSG BaseCreateProcessMessageSxs)
 {
 
 	//wprintf(L"[*] BaseCreateProcessMessageSxs Pointer 0x%p\n", &BaseCreateProcessMessageSxs);
 	wprintf(L"[*] Flags: 0x%08lx\n", BaseCreateProcessMessageSxs.Flags);
 	wprintf(L"[*] ProcessParameterFlags.Flags: 0x%08lx\n", BaseCreateProcessMessageSxs.ProcessParameterFlags);
-	wprintf(L"[*] AssemblyDirectory: %ls == Length: %d == MaximumLength: %d\n", BaseCreateProcessMessageSxs.AssemblyDirectory.Buffer, BaseCreateProcessMessageSxs.AssemblyDirectory.Length, BaseCreateProcessMessageSxs.AssemblyDirectory.MaximumLength);
+
+	if (BaseCreateProcessMessageSxs.AssemblyDirectory.Length)
+		wprintf(L"[*] AssemblyDirectory: %ls, Length: %d,  MaximumLength: %d\n", BaseCreateProcessMessageSxs.AssemblyDirectory.Buffer, BaseCreateProcessMessageSxs.AssemblyDirectory.Length, BaseCreateProcessMessageSxs.AssemblyDirectory.MaximumLength);
 	wprintf(L"[*] ActivationContextRunLevel.RunLevel: %d\n", BaseCreateProcessMessageSxs.ActivationContextRunLevel.RunLevel);
-	wprintf(L"[*] CultureFallBacks: %ls, Length = %d, MaximumLength = %d\n", BaseCreateProcessMessageSxs.CultureFallBacks.Buffer, BaseCreateProcessMessageSxs.CultureFallBacks.Length, BaseCreateProcessMessageSxs.CultureFallBacks.MaximumLength);
-	wprintf(L"[*] AssemblyName Length: %d, MaximumLength: %d\n", BaseCreateProcessMessageSxs.AssemblyName.Length, BaseCreateProcessMessageSxs.AssemblyName.MaximumLength);
+	wprintf(L"[*] CultureFallBacks: \"");
+	for (USHORT i = 0; i < BaseCreateProcessMessageSxs.CultureFallBacks.Length / sizeof(WCHAR) - sizeof(UNICODE_NULL); i++) {
+		if (BaseCreateProcessMessageSxs.CultureFallBacks.Buffer[i] == L'\0')
+		{
+			if (BaseCreateProcessMessageSxs.CultureFallBacks.Buffer[i + 1] == L'\0')
+				break;
+			else
+				wprintf(L"\\0");
+		}
+		else
+		{
+			wprintf(L"%c", BaseCreateProcessMessageSxs.CultureFallBacks.Buffer[i]);
+		}
+		
+	}
+	wprintf(L"\" Length = %hd, MaximumLength = %hd\n", BaseCreateProcessMessageSxs.CultureFallBacks.Length, BaseCreateProcessMessageSxs.CultureFallBacks.MaximumLength);
+	wprintf(L"[*] AssemblyName Length: %hd, MaximumLength: %hd\n", BaseCreateProcessMessageSxs.AssemblyName.Length, BaseCreateProcessMessageSxs.AssemblyName.MaximumLength);
 	wprintf(L"[*] AssemblyName: %ls\n", BaseCreateProcessMessageSxs.AssemblyName.Buffer);
-	wprintf(L"[*] SxsSupportedOSMajorVersion[uncorrected]: %d\n", BaseCreateProcessMessageSxs.SxsSupportedOSMajorVersion);
+	wprintf(L"[*] SxsSupportOSVersion: %hd.%hd (SwitchBack Context)\n", BaseCreateProcessMessageSxs.SxsSupportOSInfo.MajorVersion, BaseCreateProcessMessageSxs.SxsSupportOSInfo.MinorVersion);
 	wprintf(L"[*] SxsMaxVersionTested: ");
 	for (int n = 3; n >= 0; n--)
 	{
-		wprintf(L"%d", *(USHORT*)((char*)&BaseCreateProcessMessageSxs.SxsMaxVersionTested + sizeof(USHORT) * n));
+		wprintf(L"%hd", *(USHORT*)((char*)&BaseCreateProcessMessageSxs.SxsMaxVersionTested + sizeof(USHORT) * n));
 		if (n > 0)
 			wprintf(L".");
 		else

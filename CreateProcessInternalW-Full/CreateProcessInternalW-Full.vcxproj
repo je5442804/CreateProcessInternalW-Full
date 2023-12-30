@@ -128,6 +128,7 @@
       <WholeProgramOptimization>false</WholeProgramOptimization>
       <CallingConvention>Cdecl</CallingConvention>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -159,16 +160,14 @@
     <ClInclude Include="ntapi.hpp" />
     <ClInclude Include="otherapi.hpp" />
     <ClInclude Include="structs.hpp" />
-    <ClInclude Include="sxssrv.hpp" />
     <ClInclude Include="syscalls.hpp" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="syscalls.asm">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">ml64 /c %(fileName).asm</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(fileName).obj</Outputs>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">ml64 /c %(fileName).asm</Command>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(fileName).obj</Outputs>
     </CustomBuild>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

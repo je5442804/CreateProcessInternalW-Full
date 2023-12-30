@@ -1,7 +1,5 @@
 #pragma once
-#include "sxssrv.hpp"
 #include "structs.hpp"
-#include <appmodel.h>
 
 #define CSRSRV_SERVERDLL_INDEX          0
 #define CSRSRV_FIRST_API_NUMBER         0
@@ -32,9 +30,11 @@
 #define BASE_MSG_SXS_ALTERNATIVE_MODE                                   (0x0040) // rev
 #define BASE_MSG_SXS_DEV_OVERRIDE_PRESENT                               (0x0080) // rev
 #define BASE_MSG_SXS_MANIFEST_OVERRIDE_PRESENT                          (0x0100) // rev
-//#define BASE_MSG_SXS_DOTLOCAL_OVERRIDE_PRESENT
+#define BASE_MSG_SXS_DOTLOCAL_OVERRIDE_PRESENT                          (0x0200) // uncorrected
 #define BASE_MSG_SXS_PACKAGE_IDENTITY_PRESENT                           (0x0400) // rev
 #define BASE_MSG_SXS_FULL_TRUST_INTEGRITY_PRESENT                       (0x0800) // rev
+
+#define SXS_APPCOMPACT_FLAG_APP_RUNNING_SAFEMODE                        (0x0001)
 
 #define BASE_CREATE_PROCESS_MSG_PROCESS_FLAG_FEEDBACK_ON                1
 #define BASE_CREATE_PROCESS_MSG_PROCESS_FLAG_GUI_WAIT                   2
@@ -160,13 +160,27 @@ typedef struct _SXS_WIN32_NT_PATH_PAIR
 typedef       SXS_WIN32_NT_PATH_PAIR* PSXS_WIN32_NT_PATH_PAIR;
 typedef const SXS_WIN32_NT_PATH_PAIR* PCSXS_WIN32_NT_PATH_PAIR;
 
+#define BASE_MSG_FILETYPE_NONE             (0)
+#define BASE_MSG_FILETYPE_XML              (1)
+#define BASE_MSG_FILETYPE_PRECOMPILED_XML  (2)
+
+#define BASE_MSG_PATHTYPE_NONE             (0)
+#define BASE_MSG_PATHTYPE_FILE             (1)
+#define BASE_MSG_PATHTYPE_URL              (2)
+#define BASE_MSG_PATHTYPE_OVERRIDE         (3)
+
+#define BASE_MSG_HANDLETYPE_NONE           (0)
+#define BASE_MSG_HANDLETYPE_PROCESS        (1)
+#define BASE_MSG_HANDLETYPE_CLIENT_PROCESS (2)
+#define BASE_MSG_HANDLETYPE_SECTION        (3)
+
 typedef struct _BASE_MSG_SXS_STREAM {
-    UCHAR          FileType;
-    UCHAR          PathType;
-    UCHAR          HandleType;//2
-    UNICODE_STRING Path;//8
-    HANDLE         FileHandle;//24
-    HANDLE         Handle;//32
+    UCHAR          FileType;        // BASE_MSG_FILETYPE_
+    UCHAR          PathType;        // BASE_MSG_PATHTYPE_
+    UCHAR          HandleType;      // BASE_MSG_HANDLETYPE_*
+    UNICODE_STRING Path;
+    HANDLE         FileHandle;
+    HANDLE         Handle;
     ULONGLONG      Offset; // big enough to hold file offsets in the future
     SIZE_T         Size;
 } BASE_MSG_SXS_STREAM, * PBASE_MSG_SXS_STREAM;
@@ -213,11 +227,11 @@ typedef struct _BASE_SXS_CREATEPROCESS_MSG {//win 10 new
     //=================================================================
     UNICODE_STRING CultureFallBacks; //136->152 ===== [17]-[18] CultureFallBacks CacheSxsLanguageBuffer
     ACTIVATION_CONTEXT_RUN_LEVEL_INFORMATION ActivationContextRunLevel;//[19]-[20]/2   152->164 
-    DWORD SxsSupportedOSMajorVersion;// [20] + 4 164->168 Uncorrected!!! ****Version?? SxsProcessorArchitecture
+    SUPPORTED_OS_INFO SxsSupportOSInfo;// [20] + 4 164->168 [SwitchBackSupportOSInfo]
     UNICODE_STRING AssemblyName;    //168->184 L"-----------------------------------------------------------" [21]-[22] //Microsoft.Windows.Shell.notepad
     ULONGLONG SxsMaxVersionTested;//184->192 [23]
-    WCHAR ApplicationUserModelId[APPLICATION_USER_MODEL_ID_MAX_LENGTH];  // ?? 312
-    DWORD UnkowAppX;//??? APPLICATION_USER_MODEL_ID_MAX_LENGTH + 2 ?
+    WCHAR ApplicationUserModelId[APPLICATION_USER_MODEL_ID_MAX_LENGTH];// 312
+    ULONG ApplicationUserModelIdLength;
 } BASE_SXS_CREATEPROCESS_MSG, * PBASE_SXS_CREATEPROCESS_MSG; 
 
 typedef struct _BASE_CREATE_PROCESS {
@@ -268,8 +282,6 @@ typedef struct _SXS_CREATEPROCESS_UTILITY {
     HANDLE FileHandle;//AppXFileHandle
 }SXS_CREATEPROCESS_UTILITY,*PSXS_CREATEPROCESS_UTILITY; //88
 
-#define IN
-#define OUT
 typedef struct _SXS_GENERATE_ACTIVATION_CONTEXT_STREAM
 {
     IStream* Stream;
@@ -285,9 +297,7 @@ typedef struct _SXS_GENERATE_ACTIVATION_CONTEXT_STREAM
 } SXS_GENERATE_ACTIVATION_CONTEXT_STREAM;
 
 
-// 104 -> 408 OK
-#define IN
-#define OUT
+// 104 -> 408 OK SxsGenerateActivationContextParameters
 typedef struct _SXS_GENERATE_ACTIVATION_CONTEXT_PARAMETERS
 {
     IN DWORD                    Flags;//0
@@ -325,7 +335,7 @@ typedef struct _BASE_SXS_CREATE_ACTIVATION_CONTEXT_MSG {
     BASE_MSG_SXS_STREAM     Manifest;//24
     BASE_MSG_SXS_STREAM     Policy;//80
     UNICODE_STRING          AssemblyDirectory;//136
-    UNICODE_STRING          TextualAssemblyIdentity;//152
+    UNICODE_STRING          TextuaNAssemblyIdentity;//152
     LARGE_INTEGER           FileLastWriteTime;//168
     ULONGLONG               ResourceId;//176  == 1 ??
     PVOID                   ActivationContextData;//184
@@ -357,7 +367,7 @@ typedef NTSTATUS(WINAPI* BasepConstructSxsCreateProcessMessage_)(
     IN HANDLE SectionHandle,//a5
     IN HANDLE TokenHandle,//a6
     IN BOOL DevOverrideEnabled,
-    IN BOOL AppCompatSxsSafeMode,//BOOLEAN<-BOOL?
+    IN ULONG dwFusionFlags,
     IN PVOID AppCompatSxsData,
     IN ULONG AppCompatSxsDataSize,
     IN BOOL NoActivationContext, // (SectionImageInfomation.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_NO_ISOLATION) != 0 

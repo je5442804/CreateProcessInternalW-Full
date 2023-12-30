@@ -1,10 +1,14 @@
+#define _USE_FULL_PROC_THREAD_ATTRIBUTE
 #pragma once
-#define WIN32_NO_STATUS
 #include <Windows.h>
 #include <iostream>
+#include <appmodel.h>
 
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
+#define IS_WIN32_HRESULT(x)	(((x) & 0xFFFF0000) == 0x80070000)
+#define WIN32_FROM_HRESULT(hr)		(0x0000FFFF & (hr))
 
+#define PtrHigh32(x) (ULONGLONG)(x & 0xFFFFFFFF00000000)
 #define WOW64_POINTER(Type) ULONG
 #define RTL_USER_PROCESS_PARAMETERS_NORMALIZED              0x01
 #define HANDLE_DETACHED_PROCESS     ((HANDLE)-1)
@@ -32,6 +36,8 @@
 #define PSM_ACTIVATION_TOKEN_DEVELOPMENT_APP 0x10
 #define BREAKAWAY_INHIBITED 0x20
 
+// 0x497C7
+//0x4E87C7
 #define PROCESS_CREATE_FLAGS_BREAKAWAY 0x00000001 // NtCreateProcessEx & NtCreateUserProcess
 #define PROCESS_CREATE_FLAGS_NO_DEBUG_INHERIT 0x00000002 // NtCreateProcessEx & NtCreateUserProcess
 #define PROCESS_CREATE_FLAGS_INHERIT_HANDLES 0x00000004 // NtCreateProcessEx & NtCreateUserProcess
@@ -44,12 +50,22 @@
 #define PROCESS_CREATE_FLAGS_SUSPENDED 0x00000200 // NtCreateProcessEx & NtCreateUserProcess
 #define PROCESS_CREATE_FLAGS_FORCE_BREAKAWAY 0x00000400 // NtCreateProcessEx & NtCreateUserProcess, requires SeTcb
 #define PROCESS_CREATE_FLAGS_MINIMAL_PROCESS 0x00000800 // NtCreateProcessEx only
-#define PROCESS_CREATE_FLAGS_RELEASE_SECTION 0x00001000 // NtCreateProcessEx & NtCreateUserProcess
+#define PROCESS_CREATE_FLAGS_RELEASE_SECTION 0x00001000 // NtCreateProcessEx & NtCreateUserProcess, remove from NtCreateUserProcess since win 11 insider 26016?
 #define PROCESS_CREATE_FLAGS_CLONE_MINIMAL 0x00002000 // NtCreateProcessEx only
 #define PROCESS_CREATE_FLAGS_CLONE_MINIMAL_REDUCED_COMMIT 0x00004000 //
 #define PROCESS_CREATE_FLAGS_AUXILIARY_PROCESS 0x00008000 // NtCreateProcessEx & NtCreateUserProcess, requires SeTcb
-#define PROCESS_CREATE_FLAGS_CREATE_STORE 0x00020000 // NtCreateProcessEx & NtCreateUserProcess
+
+#define PROCESS_CREATE_FLAGS_PACKAGE_BREAKAWAY 0x00010000 // Mask only, Fake Flag, DO NOT use as real one in NtCreateUserProcess, Local Process is Package and call with Package Breakway ? No Inherit DllPath
+#define PROCESS_CREATE_FLAGS_CREATE_STORE 0x00020000 // NtCreateProcessEx & NtCreateUserProcess win 11 22000?
 #define PROCESS_CREATE_FLAGS_USE_PROTECTED_ENVIRONMENT 0x00040000 // NtCreateProcessEx & NtCreateUserProcess
+//PspAllocateProcess ImageExpansionMitigation: 0x2 = NoImageExpansion
+//
+#define PROCESS_CREATE_FLAGS_IMAGE_EXPANSION_MITIGATION_DISABLE	0x80000
+// PspAllocateProcess->[UnknowMemoryFlags = NewProcess | 0x10]->MmCreateProcessAddressSpace->MiCreateSlabIdentity(struct _MI_PARTITION* MiPartition,&EProcess->MmSlabIdentity)
+#define PROCESS_CREATE_FLAGS_PARTITION_CREATE_SLAB_IDENTITY 0x00400000 // NtCreateProcessEx & NtCreateUserProcess win 11 insider 26016 , requires SeLockMemoryPrivilege
+
+#define DESKTOP_APP_BREAKAWAY_ENABLED(DesktopAppPolicy)  !(DesktopAppPolicy & (PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_OVERRIDE  | PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_DISABLE_PROCESS_TREE))
+#define DESKTOP_APP_BREAKAWAY_DISABLE(DesktopAppPolicy) ((DesktopAppPolicy & (PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_OVERRIDE  | PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_ENABLE_PROCESS_TREE)) == PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_ENABLE_PROCESS_TREE )
 
 #define THREAD_CREATE_FLAGS_CREATE_SUSPENDED 0x00000001 // NtCreateUserProcess & NtCreateThreadEx
 #define THREAD_CREATE_FLAGS_SKIP_THREAD_ATTACH 0x00000002 // NtCreateThreadEx only
@@ -75,9 +91,7 @@
 #define RTL_CREATE_ENVIRONMENT_TRANSLATE_FROM_OEM 0x2 // translate from OEM to Unicode (Translate flag must also be set)
 #define RTL_CREATE_ENVIRONMENT_EMPTY 0x4 // create empty environment block
 
-#define STARTF_HASSHELLDATA         0x400
 #define IMAGE_FILE_MACHINE_HYBRID_X86        0x3A64  // Hybrid: x86
-#define ProcThreadAttributeConsoleReference 10
 
 #define VDM_PARTIALLY_CREATED	    1
 #define VDM_FULLY_CREATED	    2
@@ -100,18 +114,12 @@
 
 #define VDM_STATE_MASK		    7 
 
-
 // Update VDM entry indexes
 #define UPDATE_VDM_UNDO_CREATION    0
 #define UPDATE_VDM_PROCESS_HANDLE   1
 #define UPDATE_VDM_HOOKED_CTRLC     2
 
-// LUA elevation support
-#define ELEVATION_FLAG_TOKEN_CHECKS       0x00000001
-#define ELEVATION_FLAG_VIRTUALIZATION     0x00000002
-#define ELEVATION_FLAG_SHORTCUT_REDIR     0x00000004
-#define ELEVATION_FLAG_NO_SIGNATURE_CHECK 0x00000008
-
+#define APPX_PACKEAGE_CREATEION_SUSPEND 0x1
 
 typedef struct _PROC_THREAD_ATTRIBUTE {
 	ULONG_PTR Attribute;
@@ -126,13 +134,115 @@ typedef struct _PROC_THREAD_ATTRIBUTE_LIST {
 	ULONG LastAttribute;
 	ULONG SpareUlong0;
 	PPROC_THREAD_ATTRIBUTE ExtendedFlagsAttribute;
-	PROC_THREAD_ATTRIBUTE Attributes[1];
+	_Field_size_(AttributeCount) PROC_THREAD_ATTRIBUTE Attributes[1];
 } PROC_THREAD_ATTRIBUTE_LIST, * LPPROC_THREAD_ATTRIBUTE_LIST;
 
-// private
+//ProcThreadAttributeValue
+#define ProcThreadAttributePresentFlag(Attribute) (1 << Attribute)
+
+typedef enum _PROC_THREAD_ATTRIBUTE_NUMEX {
+	ProcThreadAttributeParentProcess = 0,
+	ProcThreadAttributeExtendedFlags = 1,// in ULONG (EXTENDED_PROCESS_CREATION_FLAG_*)
+	ProcThreadAttributeHandleList = 2,
+#if (_WIN32_WINNT >= _WIN32_WINNT_WIN7)
+	ProcThreadAttributeGroupAffinity = 3,
+	ProcThreadAttributePreferredNode = 4,
+	ProcThreadAttributeIdealProcessor = 5,
+	ProcThreadAttributeUmsThread = 6,
+	ProcThreadAttributeMitigationPolicy = 7,
+#endif
+#if (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
+	ProcThreadAttributePackageFullName = 8, // in WCHAR[] // since WIN8 20跟它很像
+	ProcThreadAttributeSecurityCapabilities = 9,
+	ProcThreadAttributeConsoleReference = 10, // BaseGetConsoleReference (kernelbase.dll)
+#endif
+	ProcThreadAttributeProtectionLevel = 11,
+#if (_WIN32_WINNT >= _WIN32_WINNT_WINBLUE)
+	ProcThreadAttributeOsMaxVersionTested = 12, // in MAXVERSIONTESTED_INFO // since THRESHOLD // (from exe.manifest)
+#endif
+#if (_WIN32_WINNT >= _WIN32_WINNT_WINTHRESHOLD)
+	ProcThreadAttributeJobList = 13,
+	ProcThreadAttributeChildProcessPolicy = 14,
+	ProcThreadAttributeAllApplicationPackagesPolicy = 15, // ProcThreadAttributeFsctlProcessMitigation
+	ProcThreadAttributeWin32kFilter = 16,
+#endif
+#if (NTDDI_VERSION >= NTDDI_WIN10_RS1)
+	ProcThreadAttributeSafeOpenPromptOriginClaim = 17,
+#endif
+#if (NTDDI_VERSION >= NTDDI_WIN10_RS2)
+	ProcThreadAttributeDesktopAppPolicy = 18,
+	ProcThreadAttributeBnoIsolation = 19, // in PROC_THREAD_BNOISOLATION_ATTRIBUTE
+#endif
+	// 20 WCHAR/LPWSTR 不知道什么东西，还处理字符串结尾NULL的长度判断 UNICODE_STRING->Length & 1 ??? 
+	// ProcThread 21 8字节大小，不知道啊
+	// Pro
+#if (NTDDI_VERSION >= NTDDI_WIN10_RS5)
+	ProcThreadAttributePseudoConsole = 22, // in HANDLE (HPCON) // since RS5
+#endif
+#if (NTDDI_VERSION >= NTDDI_WIN10_19H1)
+	ProcThreadAttributeIsolationManifest = 23, // in ISOLATION_MANIFEST_PROPERTIES // rev (diversenok) // since 19H2+
+#endif
+#if (NTDDI_VERSION >= NTDDI_WIN10_MN)
+	
+	ProcThreadAttributeMitigationAuditPolicy = 24,
+	ProcThreadAttributeMachineType = 25,
+	ProcThreadAttributeComponentFilter = 26,
+#endif
+#if (NTDDI_VERSION >= NTDDI_WIN10_FE)
+	ProcThreadAttributeEnableOptionalXStateFeatures = 27,
+#endif
+	ProcThreadAttributeCreateStore = 28,// ULONG // rev (diversenok)
+	ProcThreadAttributeTrustedApp = 29
+} PROC_THREAD_ATTRIBUTE_NUMEX;
+
+
+#ifndef PROC_THREAD_ATTRIBUTE_EXTENDED_FLAGS
+#define PROC_THREAD_ATTRIBUTE_EXTENDED_FLAGS \
+    ProcThreadAttributeValue(ProcThreadAttributeExtendedFlags, FALSE, TRUE, TRUE)
+#endif
+#ifndef PROC_THREAD_ATTRIBUTE_PACKAGE_FULL_NAME
+#define PROC_THREAD_ATTRIBUTE_PACKAGE_FULL_NAME \
+    ProcThreadAttributeValue(ProcThreadAttributePackageFullName, FALSE, TRUE, FALSE)
+#endif
+#ifndef PROC_THREAD_ATTRIBUTE_CONSOLE_REFERENCE
+#define PROC_THREAD_ATTRIBUTE_CONSOLE_REFERENCE \
+    ProcThreadAttributeValue(ProcThreadAttributeConsoleReference, FALSE, TRUE, FALSE)
+#endif
+#ifndef PROC_THREAD_ATTRIBUTE_OSMAXVERSIONTESTED
+#define PROC_THREAD_ATTRIBUTE_OSMAXVERSIONTESTED \
+    ProcThreadAttributeValue(ProcThreadAttributeOsMaxVersionTested, FALSE, TRUE, FALSE)
+#endif
+#ifndef PROC_THREAD_ATTRIBUTE_SAFE_OPEN_PROMPT_ORIGIN_CLAIM
+#define PROC_THREAD_ATTRIBUTE_SAFE_OPEN_PROMPT_ORIGIN_CLAIM \
+    ProcThreadAttributeValue(ProcThreadAttributeSafeOpenPromptOriginClaim, FALSE, TRUE, FALSE)
+#endif
+#ifndef PROC_THREAD_ATTRIBUTE_BNO_ISOLATION
+#define PROC_THREAD_ATTRIBUTE_BNO_ISOLATION \
+    ProcThreadAttributeValue(ProcThreadAttributeBnoIsolation, FALSE, TRUE, FALSE)
+#endif
+#ifndef PROC_THREAD_ATTRIBUTE_ISOLATION_MANIFEST
+#define PROC_THREAD_ATTRIBUTE_ISOLATION_MANIFEST \
+    ProcThreadAttributeValue(ProcThreadAttributeIsolationManifest, FALSE, TRUE, FALSE)
+#endif
+#ifndef PROC_THREAD_ATTRIBUTE_CREATE_STORE
+#define PROC_THREAD_ATTRIBUTE_CREATE_STORE \
+    ProcThreadAttributeValue(ProcThreadAttributeCreateStore, FALSE, TRUE, FALSE)
+#endif
+#ifndef PROC_THREAD_ATTRIBUTE_TRUSTED_APP
+#define PROC_THREAD_ATTRIBUTE_TRUSTED_APP \
+    ProcThreadAttributeValue(ProcThreadAttributeTrustedApp, FALSE, TRUE, FALSE)
+#endif
+
+// private 
 #define EXTENDED_PROCESS_CREATION_FLAG_ELEVATION_HANDLED 0x00000001
 #define EXTENDED_PROCESS_CREATION_FLAG_FORCELUA 0x00000002
 #define EXTENDED_PROCESS_CREATION_FLAG_FORCE_BREAKAWAY 0x00000004 // requires SeTcbPrivilege // since WINBLUE
+
+// LUA elevation support
+#define ELEVATION_FLAG_TOKEN_CHECKS       0x00000001
+#define ELEVATION_FLAG_VIRTUALIZATION     0x00000002
+#define ELEVATION_FLAG_SHORTCUT_REDIR     0x00000004
+#define ELEVATION_FLAG_NO_SIGNATURE_CHECK 0x00000008
 
 #ifndef _WIN64
 #define GDI_HANDLE_BUFFER_SIZE GDI_HANDLE_BUFFER_SIZE32
@@ -1163,13 +1273,60 @@ typedef struct _SECTION_INTERNAL_IMAGE_INFORMATION
 typedef enum _APPHELPCACHESERVICECLASS
 {
 	ApphelpCacheServiceLookup = 0,
-	ApphelpCacheServiceRemove = 1,
-	ApphelpCacheServiceUpdate = 2,
-	ApphelpCacheServiceFlush = 3,
-	ApphelpCacheServiceDump = 4,
+	ApphelpCacheServiceRemove,
+	ApphelpCacheServiceUpdate,
+	ApphelpCacheServiceClear,//ApphelpCacheServiceFlush
+	ApphelpCacheServiceSnapStatistics,
+	ApphelpCacheServiceSnapCache,//5
+	ApphelpCacheServiceLookupCdb,//6
+	ApphelpCacheServiceRefreshCdb,
+	ApphelpCacheServiceMapQuirks,
+	ApphelpCacheServiceInvaild,//9 ApphelpCacheServiceHwIdQuery
+	ApphelpCacheServiceInitProcessData,// 10 = 0xA, PPL Process WinTcb PackageProcess
+	ApphelpCacheServiceLookupAndWriteToProcess,// 11
 	ApphelpDBGReadRegistry = 0x100,
 	ApphelpDBGWriteRegistry = 0x101,
 } APPHELPCACHESERVICECLASS, * PAPPHELPCACHESERVICECLASS;
+
+  //	AhcInfoClassSdbQueryResult          = 0x00000001,
+  //	AhcInfoClassSdbSxsOverrideManifest  = 0x00000002,
+  //	AhcInfoClassSdbRunlevelFlags        = 0x00000004,
+  //	AhcInfoClassSdbFusionFlags          = 0x00000008,
+  //	AhcInfoClassSdbInstallerFlags       = 0x00000010,
+  // 
+  //	AhcServiceData.Lookup.InfoClass = 0x1F [CompatCacheLookupAndWriteToProcess]
+/*
+typedef enum _AHC_SERVICE_CLASS {
+	ApphelpCacheServiceLookup = 0,
+	ApphelpCacheServiceRemove,
+	ApphelpCacheServiceUpdate,
+	ApphelpCacheServiceClear,
+	ApphelpCacheServiceSnapStatistics,
+	ApphelpCacheServiceSnapCache,
+	ApphelpCacheServiceLookupCdb,
+	ApphelpCacheServiceRefreshCdb,
+	ApphelpCacheServiceMapQuirks,
+	ApphelpCacheServiceHwIdQuery,//0x9
+	ApphelpCacheServiceMax
+} AHC_SERVICE_CLASS;
+*/
+
+typedef enum _APPHELPCOMMAND
+{
+	AppHelpCahceLookup = 0,                //  IoControlCode: 0x220003*
+	AppHelpCahceRemove,                //  IoControlCode:  0x220007*
+	AppHelpCahceUpdate,                //  IoControlCode:  0x22000B*
+	AppHelpCacheFlush,               //  IoControlCode: 0x22000F* 
+	AppHelpCacheDump,                  //  IoControlCode: 0x220013 
+	AppHelpCacheNotifyStart,          //  IoControlCode: 0x220017 
+	AppHelpCacheNotifyStop,            //  IoControlCode: 0x22001B
+	AppHelpCahceForward,               //  IoControlCode:  0x22001F
+	AppHelpCacheQuery,                 //  IoControlCode: 0x220023
+	AppHelpQueryModule,                //  IoControlCode: 0x220027
+	AppHelpRefresh,                    //  IoControlCode: 0x22002B
+	AppHelpCheckForChange,             //  IoControlCode: 0x22002F
+	AppHelpQueryHwId                   //11 = 0xB
+} APPHELPCOMMAND;
 
 typedef struct _TOKEN_SECURITY_ATTRIBUTES_INFORMATION
 {
@@ -1644,9 +1801,18 @@ typedef struct _RTL_USER_PROCESS_PARAMETERS32
 #define RTL_USER_PROC_DLL_REDIRECTION_LOCAL 0x00001000
 #define RTL_USER_PROC_APP_MANIFEST_PRESENT 0x00002000
 #define RTL_USER_PROC_IMAGE_KEY_MISSING 0x00004000
-//define RTL_USER_PROC_USE_DOTLOCAL 0x00008000 uncorrected
-#define RTL_USER_PROC_OPTIN_PROCESS 0x00020000
+#define RTL_USER_PROC_USE_DOTLOCAL 0x00008000 // uncorrected
 
+//
+//https://github.com/diversenok/NtUtilsLibrary
+//
+
+#define RTL_USER_PROC_OPTIN_PROCESS 0x00020000
+#define RTL_USER_PROC_SESSION_OWNER 0x00040000
+#define RTL_USER_PROC_HANDLE_USER_CALLBACK_EXCEPTIONS 0x00080000
+#define RTL_USER_PROC_PROTECTED_PROCESS 0x00400000
+#define RTL_USER_PROC_APPX_GLOBAL_OVERRIDE 0x08000000 //uncorrected
+#define RTL_USER_PROC_SECURE_PROCESS 0x80000000
 
 // private
 #define PROTECTION_LEVEL_WINTCB_LIGHT 0x00000000
@@ -1657,6 +1823,11 @@ typedef struct _RTL_USER_PROCESS_PARAMETERS32
 #define PROTECTION_LEVEL_WINTCB 0x00000005
 #define PROTECTION_LEVEL_CODEGEN_LIGHT 0x00000006
 #define PROTECTION_LEVEL_AUTHENTICODE 0x00000007
+
+typedef struct _TOKEN_ORIGIN_CLAIM {
+	ULONG Flags;
+	WCHAR ImageFileName[MAX_PATH];
+} TOKEN_ORIGIN_CLAIM;
 
 // private
 typedef enum _SE_SAFE_OPEN_PROMPT_EXPERIENCE_RESULTS {
@@ -1691,6 +1862,7 @@ typedef struct _ISOLATION_MANIFEST_PROPERTIES {
 	ULONG_PTR Level;
 } ISOLATION_MANIFEST_PROPERTIES, * PISOLATION_MANIFEST_PROPERTIES;
 
+
 typedef enum _PS_ATTRIBUTE_NUM
 {
 	PsAttributeParentProcess, // in HANDLE
@@ -1711,10 +1883,22 @@ typedef enum _PS_ATTRIBUTE_NUM
 	PsAttributeUmsThread, // ? in PUMS_CREATE_THREAD_ATTRIBUTES
 	PsAttributeMitigationOptions, // in PPS_MITIGATION_OPTIONS_MAP (PROCESS_CREATION_MITIGATION_POLICY_*) // since WIN8
 	PsAttributeProtectionLevel, // in PS_PROTECTION // since WINBLUE
-	PsAttributeSecureProcess, // in PPS_TRUSTLET_CREATE_ATTRIBUTES, since THRESHOLD
+
+	// v57 = *(_QWORD*)&Attributes->Size;
+	// if (v57 && (v57 & 7) == 0 && v57 <= 0x88)// 8 的整数倍
+	// {
+	//	...nt!IsTrustletCreateAttributeWellFormed(*(_QWORD *)(OutProcessContext + 352), TrustletSize);
+	// }
+	// .rdata:000000014000C418                                         ; DATA XREF: IsTrustletCreateAttributeWellFormed+6E↓o
+	// .rdata:000000014000C420                 dq offset TrustletType_CollaborationId
+	// .rdata : 000000014000C428                 dq offset TrustletType_VmId
+	// .rdata : 000000014000C430                 dq offset TrustletType_TkSessionId
+	// .rdata : 000000014000C438                 dq offset TrustletType_TrustedApp
+	//
+	PsAttributeSecureProcess, // in PPS_TRUSTLET_CREATE_ATTRIBUTES, since THRESHOLD  (size: 8 or 24) 
 	PsAttributeJobList, // in HANDLE[]
 	PsAttributeChildProcessPolicy, // 20, in PULONG (PROCESS_CREATION_CHILD_PROCESS_*) // since THRESHOLD2
-	PsAttributeAllApplicationPackagesPolicy, // in PULONG (PROCESS_CREATION_ALL_APPLICATION_PACKAGES_*) // since REDSTONE
+	PsAttributeAllApplicationPackagesPolicy, // in PULONG (PROCESS_CREATION_ALL_APPLICATION_PACKAGES_*) // since REDSTONE PsAttributeAttributeFsctlProcessMitigation
 	PsAttributeWin32kFilter, // in PWIN32K_SYSCALL_FILTER
 	PsAttributeSafeOpenPromptOriginClaim, // in
 	PsAttributeBnoIsolation, // in PPS_BNO_ISOLATION_PARAMETERS // since REDSTONE2
@@ -1816,7 +2000,7 @@ typedef struct _PS_ATTRIBUTE {
 
 typedef struct _PS_ATTRIBUTE_LIST {
 	SIZE_T TotalLength;					/// sizeof(PS_ATTRIBUTE_LIST)
-	PS_ATTRIBUTE Attributes[30];			/// Depends on how many attribute entries should be supplied to NtCreateUserProcess
+	PS_ATTRIBUTE Attributes[32];			/// Depends on how many attribute entries should be supplied to NtCreateUserProcess
 } PS_ATTRIBUTE_LIST, * PPS_ATTRIBUTE_LIST;
 
 typedef struct _PS_MEMORY_RESERVE {
@@ -1836,7 +2020,7 @@ typedef enum _PS_STD_HANDLE_STATE {
 #define PS_STD_OUTPUT_HANDLE 0x2
 #define PS_STD_ERROR_HANDLE 0x4
 // end_rev
-
+#define PS_STD_HANDLE_MASK_FLAG
 typedef struct _PS_STD_HANDLE_INFO {
 	union {
 		ULONG Flags; //0x121 = 100100001
@@ -1858,6 +2042,10 @@ typedef union _PS_TRUSTLET_ATTRIBUTE_ACCESSRIGHTS
 	UCHAR AccessRights;
 } PS_TRUSTLET_ATTRIBUTE_ACCESSRIGHTS, * PPS_TRUSTLET_ATTRIBUTE_ACCESSRIGHTS;
 
+// 00 02 11 00			TrustletType_CollaborationId	0x00110200
+// 00 02 13 03			TrustletType_VmId				0x03130200
+// 00 01 14 00          TrustletType_TrustedApp			0x00140100
+// 00 04 12 00          TrustletType_TkSessionId		0x00120400
 typedef struct _PS_TRUSTLET_ATTRIBUTE_TYPE
 {
 	union
@@ -2036,6 +2224,45 @@ typedef struct _API_SET_VALUE_ENTRY
 	ULONG ValueOffset;
 	ULONG ValueLength;
 } API_SET_VALUE_ENTRY, * PAPI_SET_VALUE_ENTRY;
+
+typedef struct _TELEMETRY_COVERAGE_HEADER
+{
+	UCHAR MajorVersion;
+	UCHAR MinorVersion;
+	struct
+	{
+		USHORT TracingEnabled : 1;
+		USHORT Reserved1 : 15;
+	};
+	ULONG HashTableEntries;
+	ULONG HashIndexMask;
+	ULONG TableUpdateVersion;
+	ULONG TableSizeInBytes;
+	ULONG LastResetTick;
+	ULONG ResetRound;
+	ULONG Reserved2;
+	ULONG RecordedCount;
+	ULONG Reserved3[4];
+	ULONG HashTable[ANYSIZE_ARRAY];
+} TELEMETRY_COVERAGE_HEADER, * PTELEMETRY_COVERAGE_HEADER;
+typedef struct _ASSEMBLY_STORAGE_MAP_ENTRY
+{
+	ULONG Flags;
+	UNICODE_STRING DosPath;
+	HANDLE Handle;
+} ASSEMBLY_STORAGE_MAP_ENTRY, * PASSEMBLY_STORAGE_MAP_ENTRY;
+
+#define ASSEMBLY_STORAGE_MAP_ASSEMBLY_ARRAY_IS_HEAP_ALLOCATED 0x00000001
+
+typedef struct _ASSEMBLY_STORAGE_MAP
+{
+	ULONG Flags;
+	ULONG AssemblyCount;
+	PASSEMBLY_STORAGE_MAP_ENTRY* AssemblyArray;
+} ASSEMBLY_STORAGE_MAP, * PASSEMBLY_STORAGE_MAP;
+
+typedef struct _SILO_USER_SHARED_DATA* PSILO_USER_SHARED_DATA;
+typedef struct _LEAP_SECOND_DATA* PLEAP_SECOND_DATA;
 
 #define GDI_BATCH_BUFFER_SIZE 310
 typedef struct _GDI_TEB_BATCH
@@ -2229,6 +2456,17 @@ typedef struct _LDR_DATA_TABLE_ENTRY
 	LDR_HOT_PATCH_STATE HotPatchState;
 } LDR_DATA_TABLE_ENTRY, * PLDR_DATA_TABLE_ENTRY;
 
+typedef struct _ACTIVATION_CONTEXT_DATA {
+	ULONG Magic;
+	ULONG HeaderSize;
+	ULONG FormatVersion;
+	ULONG TotalSize;
+	ULONG DefaultTocOffset;
+	ULONG ExtendedTocOffset;
+	ULONG AssemblyRosterOffset;
+	ULONG Flags;
+} ACTIVATION_CONTEXT_DATA, * PACTIVATION_CONTEXT_DATA;
+
 typedef struct _PEB
 {
 	BOOLEAN InheritedAddressSpace;
@@ -2287,10 +2525,10 @@ typedef struct _PEB
 	PAPI_SET_NAMESPACE ApiSetMap;
 	ULONG TlsExpansionCounter;
 	PVOID TlsBitmap;
-	ULONG TlsBitmapBits[2];
+	ULONG TlsBitmapBits[2]; // TLS_MINIMUM_AVAILABLE
 
 	PVOID ReadOnlySharedMemoryBase;
-	PVOID SharedData; // HotpatchInformation
+	PSILO_USER_SHARED_DATA SharedData; // HotpatchInformation
 	PVOID* ReadOnlyStaticServerData;
 
 	PVOID AnsiCodePageData; // PCPTABLEINFO
@@ -2310,7 +2548,7 @@ typedef struct _PEB
 	ULONG MaximumNumberOfHeaps;
 	PVOID* ProcessHeaps; // PHEAP
 
-	PVOID GdiSharedHandleTable;
+	PVOID GdiSharedHandleTable; // PGDI_SHARED_MEMORY
 	PVOID ProcessStarterHelper;
 	ULONG GdiDCAttributeList;
 
@@ -2329,21 +2567,21 @@ typedef struct _PEB
 	PVOID PostProcessInitRoutine;
 
 	PVOID TlsExpansionBitmap;
-	ULONG TlsExpansionBitmapBits[32];
+	ULONG TlsExpansionBitmapBits[32]; // TLS_EXPANSION_SLOTS
 
 	ULONG SessionId;
 
-	ULARGE_INTEGER AppCompatFlags;
+	ULARGE_INTEGER AppCompatFlags; // KACF_*
 	ULARGE_INTEGER AppCompatFlagsUser;
-	PVOID pShimData;
-	PVOID AppCompatInfo; // APPCOMPAT_EXE_DATA
+	PVOID pShimData;	// APPCOMPAT_EXE_DATA*
+	PVOID AppCompatInfo; // APP_COMPAT_INFO*
 
 	UNICODE_STRING CSDVersion;
 
-	PVOID ActivationContextData; // ACTIVATION_CONTEXT_DATA
-	PVOID ProcessAssemblyStorageMap; // ASSEMBLY_STORAGE_MAP
-	PVOID SystemDefaultActivationContextData; // ACTIVATION_CONTEXT_DATA
-	PVOID SystemAssemblyStorageMap; // ASSEMBLY_STORAGE_MAP
+	PACTIVATION_CONTEXT_DATA ActivationContextData;
+	PASSEMBLY_STORAGE_MAP ProcessAssemblyStorageMap;
+	PACTIVATION_CONTEXT_DATA SystemDefaultActivationContextData;
+	PASSEMBLY_STORAGE_MAP SystemAssemblyStorageMap;
 
 	SIZE_T MinimumStackCommit;
 
@@ -2385,12 +2623,12 @@ typedef struct _PEB
 	PRTL_CRITICAL_SECTION TppWorkerpListLock;
 	LIST_ENTRY TppWorkerpList;
 	PVOID WaitOnAddressHashTable[128];
-	PVOID TelemetryCoverageHeader; // REDSTONE3
+	PTELEMETRY_COVERAGE_HEADER TelemetryCoverageHeader; // REDSTONE3
 	ULONG CloudFileFlags;
 	ULONG CloudFileDiagFlags; // REDSTONE4
 	CHAR PlaceholderCompatibilityMode;
 	CHAR PlaceholderCompatibilityModeReserved[7];
-	struct _LEAP_SECOND_DATA* LeapSecondData; // REDSTONE5
+	PLEAP_SECOND_DATA LeapSecondData; // REDSTONE5
 	union
 	{
 		ULONG LeapSecondFlags;
@@ -2403,7 +2641,6 @@ typedef struct _PEB
 	ULONG NtGlobalFlag2;
 	ULONGLONG ExtendedFeatureDisableMask; // since WIN11
 } PEB, * PPEB;
-
 
 typedef struct _PEB32
 {
@@ -2509,24 +2746,35 @@ typedef struct _PEB32
 
 	UNICODE_STRING32 CSDVersion;
 
-	WOW64_POINTER(PVOID) ActivationContextData;
+	WOW64_POINTER(PACTIVATION_CONTEXT_DATA) ActivationContextData;
 	WOW64_POINTER(PVOID) ProcessAssemblyStorageMap;
-	WOW64_POINTER(PVOID) SystemDefaultActivationContextData;
+	WOW64_POINTER(PACTIVATION_CONTEXT_DATA) SystemDefaultActivationContextData;
 	WOW64_POINTER(PVOID) SystemAssemblyStorageMap;
 
 	WOW64_POINTER(SIZE_T) MinimumStackCommit;
 
-	WOW64_POINTER(PVOID) SparePointers[4];
-	ULONG SpareUlongs[5];
-	//WOW64_POINTER(PVOID *) FlsCallback;
-	//LIST_ENTRY32 FlsListHead;
-	//WOW64_POINTER(PVOID) FlsBitmap;
-	//ULONG FlsBitmapBits[FLS_MAXIMUM_AVAILABLE / (sizeof(ULONG) * 8)];
-	//ULONG FlsHighIndex;
+	WOW64_POINTER(PVOID) SparePointers[2]; // 19H1 (previously FlsCallback to FlsHighIndex)
+	WOW64_POINTER(PVOID) PatchLoaderData;
+	WOW64_POINTER(PVOID) ChpeV2ProcessInfo; // _CHPEV2_PROCESS_INFO
+
+	ULONG AppModelFeatureState;
+	ULONG SpareUlongs[2];
+
+	USHORT ActiveCodePage;
+	USHORT OemCodePage;
+	USHORT UseCaseMapping;
+	USHORT UnusedNlsField;
 
 	WOW64_POINTER(PVOID) WerRegistrationData;
 	WOW64_POINTER(PVOID) WerShipAssertPtr;
-	WOW64_POINTER(PVOID) pContextData;
+
+	union
+	{
+		WOW64_POINTER(PVOID) pContextData; // WIN7
+		WOW64_POINTER(PVOID) pUnused; // WIN10
+		WOW64_POINTER(PVOID) EcCodeBitMap; // WIN11
+	};
+
 	WOW64_POINTER(PVOID) pImageHeaderHash;
 	union
 	{
@@ -2548,7 +2796,20 @@ typedef struct _PEB32
 	ULONG CloudFileDiagFlags; // REDSTONE4
 	CHAR PlaceholderCompatibilityMode;
 	CHAR PlaceholderCompatibilityModeReserved[7];
+	WOW64_POINTER(PLEAP_SECOND_DATA) LeapSecondData; // REDSTONE5
+	union
+	{
+		ULONG LeapSecondFlags;
+		struct
+		{
+			ULONG SixtySecondEnabled : 1;
+			ULONG Reserved : 31;
+		};
+	};
+	ULONG NtGlobalFlag2;
+	ULONGLONG ExtendedFeatureDisableMask; // since WIN11
 } PEB32, * PPEB32;
+
 
 typedef struct _TEB
 {
@@ -2729,16 +2990,7 @@ typedef struct _PROCESS_BASIC_INFORMATION
 	HANDLE UniqueProcessId;
 	HANDLE InheritedFromUniqueProcessId;
 } PROCESS_BASIC_INFORMATION, * PPROCESS_BASIC_INFORMATION;
-typedef struct _ACTIVATION_CONTEXT_DATA {
-	ULONG Magic;
-	ULONG HeaderSize;
-	ULONG FormatVersion;
-	ULONG TotalSize;
-	ULONG DefaultTocOffset;
-	ULONG ExtendedTocOffset;
-	ULONG AssemblyRosterOffset;
-	ULONG Flags;
-} ACTIVATION_CONTEXT_DATA, * PACTIVATION_CONTEXT_DATA;
+
 
 typedef struct _THREAD_BASIC_INFORMATION
 {
@@ -2864,210 +3116,295 @@ typedef enum _TOKEN_INFORMATION_CLASS
 } TOKEN_INFORMATION_CLASS, * PTOKEN_INFORMATION_CLASS;
 */
 
-typedef enum _AppModelPolicy_Type {
-	LifecycleManager = 0x1,
-	AppDataAccess = 0x2,
-	WindowingModel = 0x3,
-	DllSearchOrder = 0x4,
-	Fusion = 0x5,
-	NonWindowsCodeLoading = 0x6,
-	ProcessEnd = 0x7,
-	BeginThreadInit = 0x8,
-	DeveloperInformation = 0x9,
-	CreateFileAccess = 0xA,
-	ImplicitPackageBreakaway_Internal = 0xB,
-	ProcessActivationShim = 0xC,
-	AppKnownToStateRepository = 0xD,
-	AudioManagement = 0xE,
-	PackageMayContainPublicComRegistrations = 0xF,
-	PackageMayContainPrivateComRegistrations = 0x10,
-	LaunchCreateProcessExtensions = 0x11,
-	ClrCompat = 0x12,
-	LoaderIgnoreAlteredSearchForRelativePath = 0x13,
-	ImplicitlyActivateClassicAAAServersAsIU = 0x14,
-	ComClassicCatalog = 0x15,
-	ComUnmarshaling = 0x16,
-	ComAppLaunchPerfEnhancements = 0x17,
-	ComSecurityInitialization = 0x18,
-	RoInitializeSingleThreadedBehavior = 0x19,
-	ComDefaultExceptionHandling = 0x1A,
-	ComOopProxyAgility = 0x1B,
-	AppServiceLifetime = 0x1C,
-	WebPlatform = 0x1D,
-	WinInetStoragePartitioning = 0x1E,
-	IndexerProtocolHandlerHost = 0x1F,
-	LoaderIncludeUserDirectories = 0x20,
-	ConvertAppContainerToRestrictedAppContainer = 0x21,
-	PackageMayContainPrivateMapiProvider = 0x22,
-	AdminProcessPackageClaims = 0x23,
-	RegistryRedirectionBehavior = 0x24,
-	BypassCreateProcessAppxExtension = 0x25,
-	KnownFolderRedirection = 0x26,
-	PrivateActivateAsPackageWinrtClasses = 0x27,
-	AppPrivateFolderRedirection = 0x28,
-	GlobalSystemAppDataAccess = 0x29,
-	ConsoleHandleInheritance = 0x2A,
-	ConsoleBufferAccess = 0x2B,
-	ConvertCallerTokenToUserTokenForDeployment = 0x2C,
-	ShellExecuteRetrieveIdentityFromCurrentProcess = 0x2D, // Win 10 RS5+
-	CodeIntegritySigning = 0x2E,                           // Win 10 19H1+
-	PTCActivation = 0x2F,                                  // Win 10 19H1+
-	COMIntraPackageRPCCall = 0x30,                         // Win 10 20H1+
-	LoadUser32ShimOnWindowsCoreOS = 0x31,                  // Win 10 20H1+
-	SecurityCapabilitiesOverride = 0x32,                   // Win 10 20H1+
-	CurrentDirectoryOverride = 0x33,                       // Win 10 20H1+
-	COMTokenMatchingForAAAServers = 0x34,                  // Win 10 20H1+
-	UseOriginalFileNameInTokenFQBNAttribute = 0x35,        // Win 10 20H1+
-	LoaderIncludeAlternateForwarders = 0x36,               // Win 10 20H1+
-	PullPackageDependencyData = 0x37,                      // Win 10 20H1+
-	AppInstancingErrorBehavior = 0x38,                     // Win 11+
-	BackgroundTaskRegistrationType = 0x39,                 // Win 11+
-	ModsPowerNotifification = 0x3A                         // Win 11+
+// onecore\internal\minwin\priv_sdk\inc\AppModelPolicy.h
+typedef enum _AppModelPolicy_Type
+{
+	AppModelPolicy_Type_LifecycleManager = 1,
+	AppModelPolicy_Type_AppDataAccess = 2,
+	AppModelPolicy_Type_WindowingModel = 3,
+	AppModelPolicy_Type_DllSearchOrder = 4,
+	AppModelPolicy_Type_Fusion = 5,
+	AppModelPolicy_Type_NonWindowsCodecLoading = 6,
+	AppModelPolicy_Type_ProcessEnd = 7,
+	AppModelPolicy_Type_BeginThreadInit = 8,
+	AppModelPolicy_Type_DeveloperInformation = 9,
+	AppModelPolicy_Type_CreateFileAccess = 10,
+	AppModelPolicy_Type_ImplicitPackageBreakaway_Internal = 11,
+	AppModelPolicy_Type_ProcessActivationShim = 12,
+	AppModelPolicy_Type_AppKnownToStateRepository = 13,
+	AppModelPolicy_Type_AudioManagement = 14,
+	AppModelPolicy_Type_PackageMayContainPublicComRegistrations = 15,
+	AppModelPolicy_Type_PackageMayContainPrivateComRegistrations = 16,
+	AppModelPolicy_Type_LaunchCreateProcessExtensions = 17,
+	AppModelPolicy_Type_ClrCompat = 18,
+	AppModelPolicy_Type_LoaderIgnoreAlteredSearchForRelativePath = 19,
+	AppModelPolicy_Type_ImplicitlyActivateClassicAAAServersAsIU = 20,
+	AppModelPolicy_Type_ComClassicCatalog = 21,
+	AppModelPolicy_Type_ComUnmarshaling = 22,
+	AppModelPolicy_Type_ComAppLaunchPerfEnhancements = 23,
+	AppModelPolicy_Type_ComSecurityInitialization = 24,
+	AppModelPolicy_Type_RoInitializeSingleThreadedBehavior = 25,
+	AppModelPolicy_Type_ComDefaultExceptionHandling = 26,
+	AppModelPolicy_Type_ComOopProxyAgility = 27,
+	AppModelPolicy_Type_AppServiceLifetime = 28,
+	AppModelPolicy_Type_WebPlatform = 29,
+	AppModelPolicy_Type_WinInetStoragePartitioning = 30,
+	AppModelPolicy_Type_IndexerProtocolHandlerHost = 31, // since Win RS2
+	AppModelPolicy_Type_LoaderIncludeUserDirectories = 32,
+	AppModelPolicy_Type_ConvertAppContainerToRestrictedAppContainer = 33,
+	AppModelPolicy_Type_PackageMayContainPrivateMapiProvider = 34,
+	AppModelPolicy_Type_AdminProcessPackageClaims = 35, // since Win RS3
+	AppModelPolicy_Type_RegistryRedirectionBehavior = 36,
+	AppModelPolicy_Type_BypassCreateProcessAppxExtension = 37,
+	AppModelPolicy_Type_KnownFolderRedirection = 38,
+	AppModelPolicy_Type_PrivateActivateAsPackageWinrtClasses = 39,
+	AppModelPolicy_Type_AppPrivateFolderRedirection = 40,
+	AppModelPolicy_Type_GlobalSystemAppDataAccess = 41,
+	AppModelPolicy_Type_ConsoleHandleInheritance = 42, // since Win RS4
+	AppModelPolicy_Type_ConsoleBufferAccess = 43,
+	AppModelPolicy_Type_ConvertCallerTokenToUserTokenForDeployment = 44,
+	AppModelPolicy_Type_ShellExecuteRetrieveIdentityFromCurrentProcess = 45, // since Win RS5
+	AppModelPolicy_Type_CodeIntegritySigning = 46, // since Win 19H1
+	AppModelPolicy_Type_PTCActivation = 47,
+	AppModelPolicy_Type_ComIntraPackageRpcCall = 48, // since Win 20H1
+	AppModelPolicy_Type_LoadUser32ShimOnWindowsCoreOS = 49,
+	AppModelPolicy_Type_SecurityCapabilitiesOverride = 50,
+	AppModelPolicy_Type_CurrentDirectoryOverride = 51,
+	AppModelPolicy_Type_ComTokenMatchingForAAAServers = 52,
+	AppModelPolicy_Type_UseOriginalFileNameInTokenFQBNAttribute = 53,
+	AppModelPolicy_Type_LoaderIncludeAlternateForwarders = 54,
+	AppModelPolicy_Type_PullPackageDependencyData = 55,
+	AppModelPolicy_Type_AppInstancingErrorBehavior = 56, // since Win 11
+	AppModelPolicy_Type_BackgroundTaskRegistrationType = 57,
+	AppModelPolicy_Type_ModsPowerNotification = 58,
+	AppModelPolicy_Type_Count = 58,
 } AppModelPolicy_Type;
 
+typedef enum _AppModelPolicy_PolicyValue
+{
+	AppModelPolicy_LifecycleManager_Unmanaged = 0x10000,												//Win 10 RS1+
+	AppModelPolicy_LifecycleManager_ManagedByPLM = 0x10001,
+	AppModelPolicy_LifecycleManager_ManagedByEM = 0x10002,
+	AppModelPolicy_AppDataAccess_Allowed = 0x20000,
+	AppModelPolicy_AppDataAccess_Denied = 0x20001,
+	AppModelPolicy_WindowingModel_Hwnd = 0x30000,
+	AppModelPolicy_WindowingModel_CoreWindow = 0x30001,
+	AppModelPolicy_WindowingModel_LegacyPhone = 0x30002,
+	AppModelPolicy_WindowingModel_None = 0x30003,
+	AppModelPolicy_DllSearchOrder_Traditional = 0x40000,
+	AppModelPolicy_DllSearchOrder_PackageGraphBased = 0x40001,
+	AppModelPolicy_Fusion_Full = 0x50000,
+	AppModelPolicy_Fusion_Limited = 0x50001,
+	AppModelPolicy_NonWindowsCodecLoading_Allowed = 0x60000,
+	AppModelPolicy_NonWindowsCodecLoading_Denied = 0x60001,
+	AppModelPolicy_ProcessEnd_TerminateProcess = 0x70000,
+	AppModelPolicy_ProcessEnd_ExitProcess = 0x70001,
+	AppModelPolicy_BeginThreadInit_RoInitialize = 0x80000,
+	AppModelPolicy_BeginThreadInit_None = 0x80001,
+	AppModelPolicy_DeveloperInformation_UI = 0x90000,
+	AppModelPolicy_DeveloperInformation_None = 0x90001,
+	AppModelPolicy_CreateFileAccess_Full = 0xa0000,
+	AppModelPolicy_CreateFileAccess_Limited = 0xa0001,
+	AppModelPolicy_ImplicitPackageBreakaway_Allowed = 0xb0000,
+	AppModelPolicy_ImplicitPackageBreakaway_Denied = 0xb0001,
+	AppModelPolicy_ImplicitPackageBreakaway_DeniedByApp = 0xb0002,
+	AppModelPolicy_ProcessActivationShim_None = 0xc0000,
+	AppModelPolicy_ProcessActivationShim_PackagedCWALauncher = 0xc0001,
+	AppModelPolicy_AppKnownToStateRepository_Known = 0xd0000,
+	AppModelPolicy_AppKnownToStateRepository_Unknown = 0xd0001,
+	AppModelPolicy_AudioManagement_Unmanaged = 0xe0000,
+	AppModelPolicy_AudioManagement_ManagedByPBM = 0xe0001,
+	AppModelPolicy_PackageMayContainPublicComRegistrations_Yes = 0xf0000,
+	AppModelPolicy_PackageMayContainPublicComRegistrations_No = 0xf0001,
+	AppModelPolicy_PackageMayContainPrivateComRegistrations_None = 0x100000,
+	AppModelPolicy_PackageMayContainPrivateComRegistrations_PrivateHive = 0x100001,
+	AppModelPolicy_LaunchCreateProcessExtensions_None = 0x110000,
+	AppModelPolicy_LaunchCreateProcessExtensions_RegisterWithPsm = 0x110001,
+	AppModelPolicy_LaunchCreateProcessExtensions_RegisterWithDesktopAppX = 0x110002,
+	AppModelPolicy_LaunchCreateProcessExtensions_RegisterWithDesktopAppXNoHeliumContainer = 0x110003,
+	AppModelPolicy_ClrCompat_Others = 0x120000,
+	AppModelPolicy_ClrCompat_ClassicDesktop = 0x120001,
+	AppModelPolicy_ClrCompat_Universal = 0x120002,
+	AppModelPolicy_ClrCompat_PackagedDesktop = 0x120003,
+	AppModelPolicy_LoaderIgnoreAlteredSearchForRelativePath_False = 0x130000,
+	AppModelPolicy_LoaderIgnoreAlteredSearchForRelativePath_True = 0x130001,
+	AppModelPolicy_ImplicitlyActivateClassicAAAServersAsIU_Yes = 0x140000,
+	AppModelPolicy_ImplicitlyActivateClassicAAAServersAsIU_No = 0x140001,
+	AppModelPolicy_ComClassicCatalog_MachineHiveAndUserHive = 0x150000,
+	AppModelPolicy_ComClassicCatalog_MachineHiveOnly = 0x150001,
+	AppModelPolicy_ComUnmarshaling_ForceStrongUnmarshaling = 0x160000,
+	AppModelPolicy_ComUnmarshaling_ApplicationManaged = 0x160001,
+	AppModelPolicy_ComAppLaunchPerfEnhancements_Enabled = 0x170000,
+	AppModelPolicy_ComAppLaunchPerfEnhancements_Disabled = 0x170001,
+	AppModelPolicy_ComSecurityInitialization_ApplicationManaged = 0x180000,
+	AppModelPolicy_ComSecurityInitialization_SystemManaged = 0x180001,
+	AppModelPolicy_RoInitializeSingleThreadedBehavior_ASTA = 0x190000,
+	AppModelPolicy_RoInitializeSingleThreadedBehavior_STA = 0x190001,
+	AppModelPolicy_ComDefaultExceptionHandling_HandleAll = 0x1a0000,
+	AppModelPolicy_ComDefaultExceptionHandling_HandleNone = 0x1a0001,
+	AppModelPolicy_ComOopProxyAgility_Agile = 0x1b0000,
+	AppModelPolicy_ComOopProxyAgility_NonAgile = 0x1b0001,
+	AppModelPolicy_AppServiceLifetime_StandardTimeout = 0x1c0000,
+	AppModelPolicy_AppServiceLifetime_ExtensibleTimeout = 0x1c0001,
+	AppModelPolicy_AppServiceLifetime_ExtendedForSamePackage = 0x1c0002,
+	AppModelPolicy_WebPlatform_Edge = 0x1d0000,
+	AppModelPolicy_WebPlatform_Legacy = 0x1d0001,
+	AppModelPolicy_WinInetStoragePartitioning_Isolated = 0x1e0000,
+	AppModelPolicy_WinInetStoragePartitioning_SharedWithAppContainer = 0x1e0001,
+	AppModelPolicy_IndexerProtocolHandlerHost_PerUser = 0x1f0000,// Win 10 RS2+
+	AppModelPolicy_IndexerProtocolHandlerHost_PerApp = 0x1f0001,
+	AppModelPolicy_LoaderIncludeUserDirectories_False = 0x200000,
+	AppModelPolicy_LoaderIncludeUserDirectories_True = 0x200001,
+	AppModelPolicy_ConvertAppContainerToRestrictedAppContainer_False = 0x210000,
+	AppModelPolicy_ConvertAppContainerToRestrictedAppContainer_True = 0x210001,
+	AppModelPolicy_PackageMayContainPrivateMapiProvider_None = 0x220000,
+	AppModelPolicy_PackageMayContainPrivateMapiProvider_PrivateHive = 0x220001,
+	AppModelPolicy_AdminProcessPackageClaims_None = 0x230000,											//Win 10 RS3+
+	AppModelPolicy_AdminProcessPackageClaims_Caller = 0x230001,
+	AppModelPolicy_RegistryRedirectionBehavior_None = 0x240000,
+	AppModelPolicy_RegistryRedirectionBehavior_CopyOnWrite = 0x240001,
+	AppModelPolicy_BypassCreateProcessAppxExtension_False = 0x250000,
+	AppModelPolicy_BypassCreateProcessAppxExtension_True = 0x250001,
+	AppModelPolicy_KnownFolderRedirection_Isolated = 0x260000,
+	AppModelPolicy_KnownFolderRedirection_RedirectToPackage = 0x260001,
+	AppModelPolicy_PrivateActivateAsPackageWinrtClasses_AllowNone = 0x270000,
+	AppModelPolicy_PrivateActivateAsPackageWinrtClasses_AllowFullTrust = 0x270001,
+	AppModelPolicy_PrivateActivateAsPackageWinrtClasses_AllowNonFullTrust = 0x270002,
+	AppModelPolicy_AppPrivateFolderRedirection_None = 0x280000,
+	AppModelPolicy_AppPrivateFolderRedirection_AppPrivate = 0x280001,
+	AppModelPolicy_GlobalSystemAppDataAccess_Normal = 0x290000,
+	AppModelPolicy_GlobalSystemAppDataAccess_Virtualized = 0x290001,
+	AppModelPolicy_ConsoleHandleInheritance_ConsoleOnly = 0x2a0000,										//Win 10 RS4+
+	AppModelPolicy_ConsoleHandleInheritance_All = 0x2a0001,
+	AppModelPolicy_ConsoleBufferAccess_RestrictedUnidirectional = 0x2b0000,
+	AppModelPolicy_ConsoleBufferAccess_Unrestricted = 0x2b0001,
+	AppModelPolicy_ConvertCallerTokenToUserTokenForDeployment_UserCallerToken = 0x2c0000,
+	AppModelPolicy_ConvertCallerTokenToUserTokenForDeployment_ConvertTokenToUserToken = 0x2c0001,
+	AppModelPolicy_ShellExecuteRetrieveIdentityFromCurrentProcess_False = 0x2d0000,						// Win 10 RS5+
+	AppModelPolicy_ShellExecuteRetrieveIdentityFromCurrentProcess_True = 0x2d0001,
+	AppModelPolicy_CodeIntegritySigning_Default = 0x2e0000,												// Win 10 19H1+
+	AppModelPolicy_CodeIntegritySigning_OriginBased = 0x2e0001,
+	AppModelPolicy_CodeIntegritySigning_OriginBasedForDev = 0x2e0002,
+	AppModelPolicy_PTCActivation_Default = 0x2f0000,
+	AppModelPolicy_PTCActivation_AllowActivationInBrokerForMediumILContainer = 0x2f0001,
+	AppModelPolicy_Type_ComIntraPackageRpcCall_NoWake = 0x300000,										// Win 10 20H1+
+	AppModelPolicy_Type_ComIntraPackageRpcCall_Wake = 0x300001,
+	AppModelPolicy_LoadUser32ShimOnWindowsCoreOS_True = 0x310000,
+	AppModelPolicy_LoadUser32ShimOnWindowsCoreOS_False = 0x310001,
+	AppModelPolicy_SecurityCapabilitiesOverride_None = 0x320000,
+	AppModelPolicy_SecurityCapabilitiesOverride_PackageCapabilities = 0x320001,
+	AppModelPolicy_CurrentDirectoryOverride_None = 0x330000,
+	AppModelPolicy_CurrentDirectoryOverride_PackageInstallDirectory = 0x330001,
+	AppModelPolicy_ComTokenMatchingForAAAServers_DontUseNtCompareTokens = 0x340000,
+	AppModelPolicy_ComTokenMatchingForAAAServers_UseNtCompareTokens = 0x340001,
+	AppModelPolicy_UseOriginalFileNameInTokenFQBNAttribute_False = 0x350000,
+	AppModelPolicy_UseOriginalFileNameInTokenFQBNAttribute_True = 0x350001,
+	AppModelPolicy_LoaderIncludeAlternateForwarders_False = 0x360000,
+	AppModelPolicy_LoaderIncludeAlternateForwarders_True = 0x360001,
+	AppModelPolicy_PullPackageDependencyData_False = 0x370000,
+	AppModelPolicy_PullPackageDependencyData_True = 0x370001,
+	AppModelPolicy_AppInstancingErrorBehavior_SuppressErrors = 0x380000,								// Win 11+
+	AppModelPolicy_AppInstancingErrorBehavior_RaiseErrors = 0x380001,
+	AppModelPolicy_BackgroundTaskRegistrationType_Unsupported = 0x390000,
+	AppModelPolicy_BackgroundTaskRegistrationType_Manifested = 0x390001,
+	AppModelPolicy_BackgroundTaskRegistrationType_Win32Clsid = 0x390002,
+	AppModelPolicy_Type_ModsPowerNotification_Disabled = 0x3a0000,
+	AppModelPolicy_Type_ModsPowerNotification_Enabled = 0x3a0001,
+	AppModelPolicy_Type_ModsPowerNotification_QueryDam = 0x3a0002,
+} AppModelPolicy_PolicyValue;
 
-typedef enum _AppModelPolicy_PolicyValue {
-	None = 0,
-	LifecycleManager_Unmanaged = 0x10000,//Win 10 RS1+
-	LifecycleManager_ManagedByPLM = 0x10001,
-	LifecycleManager_ManagedByEM = 0x10002,
-	AppDataAccess_Allowed = 0x20000,
-	AppDataAccess_Denied = 0x20001,
-	WindowingModel_Hwnd = 0x30000,
-	WindowingModel_CoreWindow = 0x30001,
-	WindowingModel_LegacyPhone = 0x30002,
-	WindowingModel_None = 0x30003,
-	DllSearchOrder_Traditional = 0x40000,
-	DllSearchOrder_PackageGraphBased = 0x40001,
-	Fusion_Full = 0x50000,
-	Fusion_Limited = 0x50001,
-	NonWindowsCodeLoading_Allowed = 0x60000,
-	NonWindowsCodeLoading_Denied = 0x60001,
-	ProcessEnd_TerminateProcess = 0x70000,
-	ProcessEnd_ExitProcess = 0x70001,
-	BeginThreadInit_RoInitialize = 0x80000,
-	BeginThreadInit_None = 0x80001,
-	DeveloperInformation_UI = 0x90000,
-	DeveloperInformation_None = 0x90001,
-	CreateFileAccess_Full = 0xA0000,
-	CreateFileAccess_Limited = 0xA0001,
-	ImplicitPackageBreakaway_Allowed = 0xB0000,
-	ImplicitPackageBreakaway_Denied = 0xB0001,
-	ImplicitPackageBreakaway_DeniedByApp = 0xB0002,
-	ProcessActivationShim_None = 0xC0000,
-	ProcessActivationShim_PackagedCWALauncher = 0xC0001,
-	AppKnownToStateRepository_Known = 0xD0000,
-	AppKnownToStateRepository_Unknown = 0xD0001,
-	AudioManagement_Unmanaged = 0xE0000,
-	AudioManagement_ManagedByPBM = 0xE0001,
-	PackageMayContainPublicComRegistrations_Yes = 0xF0000,
-	PackageMayContainPublicComRegistrations_No = 0xF0001,
-	PackageMayContainPrivateComRegistrations_None = 0x100000,
-	PackageMayContainPrivateComRegistrations_PrivateHive = 0x100001,
-	LaunchCreateProcessExtensions_None = 0x110000,
-	LaunchCreateProcessExtensions_RegisterWithPsm = 0x110001,
-	LaunchCreateProcessExtensions_RegisterWithDesktopAppX = 0x110002,
-	ClrCompat_Others = 0x120000,
-	ClrCompat_ClassicDesktop = 0x120001,
-	ClrCompat_Universal = 0x120002,
-	ClrCompat_PackagedDesktop = 0x120003,
-	LoaderIgnoreAlteredSearchForRelativePath_False = 0x130000,
-	LoaderIgnoreAlteredSearchForRelativePath_True = 0x130001,
-	ImplicitlyActivateClassicAAAServersAsIU_Yes = 0x140000,
-	ImplicitlyActivateClassicAAAServersAsIU_No = 0x140001,
-	ComClassicCatalog_MachineHiveAndUserHive = 0x150000,
-	ComClassicCatalog_MachineHiveOnly = 0x150001,
-	ComUnmarshaling_ForceStrongUnmarshaling = 0x160000,
-	ComUnmarshaling_ApplicationManaged = 0x160001,
-	ComAppLaunchPerfEnhancements_Enabled = 0x170000,
-	ComAppLaunchPerfEnhancements_Disabled = 0x170001,
-	ComSecurityInitialization_ApplicationManaged = 0x180000,
-	ComSecurityInitialization_SystemManaged = 0x180001,
-	RoInitializeSingleThreadedBehavior_ASTA = 0x190000,
-	RoInitializeSingleThreadedBehavior_STA = 0x190001,
-	ComDefaultExceptionHandling_HandleAll = 0x1A0000,
-	ComDefaultExceptionHandling_HandleNone = 0x1A0001,
-	ComOopProxyAgility_Agile = 0x1B0000,
-	ComOopProxyAgility_NonAgile = 0x1B0001,
-	AppServiceLifetime_StandardTimeout = 0x1C0000,
-	AppServiceLifetime_ExtendedForSamePackage = 0x1C0001,
-	WebPlatform_Edge = 0x1D0000,
-	WebPlatform_Legacy = 0x1D0001,
-	WinInetStoragePartitioning_Isolated = 0x1E0000,
-	WinInetStoragePartitioning_SharedWithAppContainer = 0x1E0001,
-	IndexerProtocolHandlerHost_PerUser = 0x1F0000,//// Win 10 RS2+
-	IndexerProtocolHandlerHost_PerApp = 0x1F0001,
-	LoaderIncludeUserDirectories_False = 0x200000,
-	LoaderIncludeUserDirectories_True = 0x200001,
-	ConvertAppContainerToRestrictedAppContainer_False = 0x210000,
-	ConvertAppContainerToRestrictedAppContainer_True = 0x210001,
-	PackageMayContainPrivateMapiProvider_None = 0x220000,
-	PackageMayContainPrivateMapiProvider_PrivateHive = 0x220001,
-	AdminProcessPackageClaims_None = 0x230000,//Win 10 RS3+
-	AdminProcessPackageClaims_Caller = 0x230001,
-	RegistryRedirectionBehavior_None = 0x240000,
-	RegistryRedirectionBehavior_CopyOnWrite = 0x240001,
-	BypassCreateProcessAppxExtension_False = 0x250000,
-	BypassCreateProcessAppxExtension_True = 0x250001,
-	KnownFolderRedirection_Isolated = 0x260000,
-	KnownFolderRedirection_RedirectToPackage = 0x260001,
-	PrivateActivateAsPackageWinrtClasses_AllowNone = 0x270000,
-	PrivateActivateAsPackageWinrtClasses_AllowFullTrust = 0x270001,
-	PrivateActivateAsPackageWinrtClasses_AllowNonFullTrust = 0x270002,
-	AppPrivateFolderRedirection_None = 0x280000,
-	AppPrivateFolderRedirection_AppPrivate = 0x280001,
-	GlobalSystemAppDataAccess_Normal = 0x290000,
-	GlobalSystemAppDataAccess_Virtualized = 0x290001,
-	ConsoleHandleInheritance_ConsoleOnly = 0x2A0000,//Win 10 RS4+
-	ConsoleHandleInheritance_All = 0x2A0001,
-	ConsoleBufferAccess_RestrictedUnidirectional = 0x2B0000,
-	ConsoleBufferAccess_Unrestricted = 0x2B0001,
-	ConvertCallerTokenToUserTokenForDeployment_UserCallerToken = 0x2C0000,
-	ConvertCallerTokenToUserTokenForDeployment_ConvertTokenToUserToken = 0x2C0001,
-
-	ShellExecuteRetrieveIdentityFromCurrentProcess_False = 0x2D0000, // Win 10 RS5+
-	ShellExecuteRetrieveIdentityFromCurrentProcess_True = 0x2D0001,
-
-	CodeIntegritySigning_Default = 0x2E0000,                           // Win 10 19H1+
-	CodeIntegritySigning_OriginBased = 0x2E0001,
-	CodeIntegritySigning_OriginBasedForDev = 0x2E0002,
-	PTCActivation_Default = 0x2F0000,
-	PTCActivation_AllowActivationInBrokerForMediumILContainer = 0x2F0001,
-
-	COMIntraPackageRPCCall_NoWake = 0x300000,                         // Win 10 20H1+
-	COMIntraPackageRPCCall_Wake = 0x300001,
-	LoadUser32ShimOnWindowsCoreOS_True = 0x310000,
-	LoadUser32ShimOnWindowsCoreOS_False = 0x310001,
-	SecurityCapabilitiesOverride_None = 0x320000,
-	SecurityCapabilitiesOverride_PackageCapabilities = 0x320001,
-	CurrentDirectoryOverride_None = 0x330000,
-	CurrentDirectoryOverride_PackageInstallDirectory = 0x330001,
-	COMTokenMatchingForAAAServers_DontUseNtCompareTokens = 0x340000,
-	COMTokenMatchingForAAAServers_UseNtCompareTokens = 0x340001,
-	UseOriginalFileNameInTokenFQBNAttribute_False = 0x350000,
-	UseOriginalFileNameInTokenFQBNAttribute_True = 0x350001,
-	LoaderIncludeAlternateForwarders_False = 0x360001,
-	LoaderIncludeAlternateForwarders_True = 0x360000,
-	PullPackageDependencyData_False = 0x370000,
-	PullPackageDependencyData_True = 0x370001,
-	AppInstancingErrorBehavior_SuppressErrors = 0x380000,       // Win 11+
-	AppInstancingErrorBehavior_RaiseErrors = 0x380001,
-	BackgroundTaskRegistrationType_Unsupported = 0x390000,
-	BackgroundTaskRegistrationType_Manifested = 0x390001,
-	BackgroundTaskRegistrationType_Win32CLSID = 0x390002,
-	ModsPowerNotifification_Disabled = 0x3A0000,
-	ModsPowerNotifification_Enabled = 0x3A0001
-} AppModelPolicy_PolicyValue, * PAppModelPolicy_PolicyValue;
 
 typedef struct _PS_PKG_CLAIM {
 	ULONG_PTR Flags;
 	ULONG_PTR Origin;
 } PS_PKG_CLAIM, * PPS_PKG_CLAIM;
 
-typedef struct _CONSOLE_HANDLE_INFO {
-	HANDLE ConsoleHandle;
-	BOOLEAN ConsoleUnknow;
-}CONSOLE_HANDLE_INFO, * PCONSOLE_HANDLE_INFO;
+#define CONSOLE_DETACHED_PROCESS ((HANDLE)-1)
+#define CONSOLE_NEW_CONSOLE ((HANDLE)-2)
+#define CONSOLE_CREATE_NO_WINDOW ((HANDLE)-3)
+
+#define SYSTEM_ROOT_CONSOLE_EVENT 3
+
+#define CONSOLE_READ_NOREMOVE   0x0001
+#define CONSOLE_READ_NOWAIT     0x0002
+
+#define CONSOLE_READ_VALID      (CONSOLE_READ_NOREMOVE | CONSOLE_READ_NOWAIT)
+
+#define CONSOLE_GRAPHICS_BUFFER  2
+//ProcessParameters->ConsoleFlags [kernelbase.dll!ConsoleInitialize]
+#define CONSOLE_IGNORE_CTRL_C		0x1
+#define CONSOLE_HANDLE_REFERENCE	0x2 //IsReferenceHandle win 10 1803
+#define CONSOLE_USING_PTY_REFERENCE 0x4 //win 10 1809
+
+typedef struct _CONSOLE_REFERENCE {
+	PHANDLE ConsoleRererenceHandle;//0x0
+	UCHAR	ConsoleRererenceType; // ConsoleHandleType//IsPseudoConsole[PtyRererence] 0x0 = ReferenceConsole //0x1 = PseudoConsole
+}CONSOLE_REFERENCE, * PCONSOLE_REFERENCE;
+
+// This structure is part of an ABI shared with the rest of the operating system.
+// HPCON Pointer of
+typedef struct _PseudoConsole 
+{
+	// hSignal is a anonymous pipe used for out of band communication with conhost.
+	// It's used to send the various PTY_SIGNAL_* messages.
+	HANDLE hSignal;
+	// The "server handle" in conhost represents the console IPC "pipe" over which all console
+	// messages, all client connect and disconnect events, API calls, text output, etc. flow.
+	// The full type of this handle is \Device\ConDrv\Server and is implemented in
+	// /minkernel/console/condrv/server.c. If you inspect conhost's handles it'll show up
+	// as a handle of name \Device\ConDrv, because that's the namespace of these handles.
+	//
+	// hPtyReference is derived from that handle (= a child), is named \Reference and is implemented
+	// in /minkernel/console/condrv/reference.c. While conhost is the sole owner and user of the
+	// "server handle", the "reference handle" is what console processes actually inherit in order
+	// to communicate with the console server (= conhost). When the reference count of the
+	// \Reference handle drops to 0, it'll release its reference to the server handle.
+	// The server handle in turn is implemented in such a way that the IPC pipe is broken
+	// once the reference count drops to 1, because then conhost must be the last one using it.
+	//
+	// In other words: As long as hPtyReference exists it'll keep the server handle alive
+	// and thus keep conhost alive. Closing this handle will make conhost exit as soon as all
+	// currently connected clients have disconnected and closed the reference handle as well.
+	//
+	// This benefit of this system is that it naturally works with handle inheritance in
+	// CreateProcess,  which ensures that the reference handle is safely duplicated and
+	// transmitted from a parent process to a new child process, even if the parent
+	// process exits before the OS has even finished spawning the child process.
+	HANDLE hPtyReference;
+	// hConPtyProcess is a process handle to the conhost instance that we've spawned for ConPTY.
+	// The ChildProcess Conhost.exe ProcessHandle, but Created from Userland instead of kernelbase.dll!ConsoleLaunchServerProcess
+	HANDLE hConPtyProcess;
+} PseudoConsole;
+
+// Signals
+// These are not defined publicly, but are used for controlling the conpty via
+//      the signal pipe.
+#define PTY_SIGNAL_SHOWHIDE_WINDOW (1u)
+#define PTY_SIGNAL_CLEAR_WINDOW (2u)
+#define PTY_SIGNAL_REPARENT_WINDOW (3u)
+#define PTY_SIGNAL_RESIZE_WINDOW (8u)
+
+// CreatePseudoConsole Flags
+#ifndef PSEUDOCONSOLE_INHERIT_CURSOR
+#define PSEUDOCONSOLE_INHERIT_CURSOR (0x1)
+#endif
+#ifndef PSEUDOCONSOLE_RESIZE_QUIRK
+#define PSEUDOCONSOLE_RESIZE_QUIRK (0x2)
+#endif
+#ifndef PSEUDOCONSOLE_WIN32_INPUT_MODE
+#define PSEUDOCONSOLE_WIN32_INPUT_MODE (0x4)
+#endif
+#ifndef PSEUDOCONSOLE_PASSTHROUGH_MODE
+#define PSEUDOCONSOLE_PASSTHROUGH_MODE (0x8)
+#endif
+
+#define  PS_MITIGATION_OPTION3_FSCTL_SYSTEM_CALL_DISABLE_ALWAYS_ON			0x10000000
+#define  PS_MITIGATION_OPTION3_FSCTL_SYSTEM_CALL_DISABLE_ALWAYS_OFF			0x20000000
+#define  PS_MITIGATION_OPTION3_FSCTL_SYSTEM_CALL_DISABLE_MASK				0x30000000
+
+#define  PS_MITIGATION_OLD_OPTION3_FSCTL_SYSTEM_CALL_DISABLE_ALWAYS_ON		0x1000000
+#define  PS_MITIGATION_OLD_OPTION3_FSCTL_SYSTEM_CALL_DISABLE_ALWAYS_OFF		0x2000000
+#define  PS_MITIGATION_OLD_OPTION3_FSCTL_SYSTEM_CALL_DISABLE_MASK			0x3000000
 
 typedef struct _PS_MITIGATION_OPTIONS_MAP
 {
@@ -3265,6 +3602,7 @@ typedef struct _KUSER_SHARED_DATA
 	XSTATE_CONFIGURATION XState;
 	KSYSTEM_TIME FeatureConfigurationChangeStamp;
 	ULONG Spare;
+	ULONG64 UserPointerAuthMask;
 } KUSER_SHARED_DATA, * PKUSER_SHARED_DATA;
 typedef enum _HARDERROR_RESPONSE_OPTION
 {
@@ -3320,7 +3658,7 @@ typedef struct _APPX_PROCESS_CONTEXT
 			UCHAR SpareBits2 : 8;
 			USHORT Reversed : 16;
 		}s1;
-	};
+	}u1;
 	LPCWSTR AppXRedirectionDllName;//88
 }APPX_PROCESS_CONTEXT, * PAPPX_PROCESS_CONTEXT;
 
@@ -3356,7 +3694,6 @@ public:
 class ExtendedAppExecutionAliasInfo_New
 {
 public:
-
 	//private:
 	PWSTR AppXPackageName = NULL;//0 WCHAR [256]
 	LPCWSTR AppAliasBaseImagePath = NULL;//8
@@ -3373,8 +3710,427 @@ public:
 	PDESKTOP_APPX_ACTIVATION_INFO DesktopAppXActivationInfo = NULL;//216
 }; //224
 
-
+//
 // STARTF_?? = 0x10000  (holographic/VR related ???) since win 10 1903 [18362]
 // STARTF_HOLOLENAPPFASTMODE ??????
 // https://learn.microsoft.com/en-us/hololens/hololens-release-notes [Microsoft Windows Hololens 2]
+// [Downgrade HoloLens 2 OS to Specific Previous Version]
+// https://learn.microsoft.com/en-us/answers/questions/963411/downgrade-hololens-2-os-to-specific-previous-versi
+// https://aka.ms/hololens2download/10.0.22621.1254
+// https://learn.microsoft.com/zh-cn/windows-hardware/get-started/adk-install: [Windows Imaging and Configuration Designer (ICD)]
+// 
+
 #define STARTF_HOLOLENAPPNOWAIT 0x00010000 //Fake define lol, Do NOT care about it [uncorrected]
+
+/*
+class ExtendedPackagedAppContext
+{
+	// WCHAR UnknowPacketString[260];??ExtendAppXCommandLine
+	USHORT ?1;
+	WCHAR UnknowPacketString[128];
+	USHORT ?2;
+	WCHAR UnknowPacketString[128];
+	//130?
+	//130?
+	LPCWSTR AppXApplicateImagePath;//520
+	...
+};
+*/
+
+typedef struct _ACTIVATION_TOKEN_INFO//win 11 insider 26016?
+{
+	HANDLE ActivationTokenHandle;
+	LPWSTR BnoIsolationPackageSidString; //in RemoteProcess explorer.exe
+}ACTIVATION_TOKEN_INFO, *PACTIVATION_TOKEN_INFO;
+
+//OSVERSIONINFOEXW lpVersionInformation = { 0 };
+// WTF RB Tree? xxx nonono, but Merge COBALT_MODFLAG
+// DO NOT USE!
+typedef struct _CHPE_COBALT_MODULE_FLAGS//32
+{
+	PVOID a;
+	union
+	{
+		ULONGLONG Flag1;//16
+		struct
+		{
+			ULONG Unknow;
+			ULONG Reversed;
+		};
+	};
+
+	union
+	{
+		ULONG Flag2;//16
+		struct
+		{
+			WORD unknow1;
+			char w;
+			char z;
+		}s1;
+	}u1;
+	char c;//20
+	char d;//21
+	char e;//22
+	char f;//23
+	union
+	{
+		ULONGLONG Flag3;//24
+		struct
+		{
+			char CoreFlagXor;//24 0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40
+			char CoreFlag2Xor2;//25  0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40
+			char XOR3;//26 win 11
+			char Reversed[6];
+		}s2;
+	}u2;
+}CHPE_COBALT_MODULE_FLAGS, * PCHPE_COBALT_MODULE_FLAGS;
+
+
+
+typedef WORD TAG;
+typedef DWORD TAGID;
+typedef DWORD TAGREF;
+typedef PVOID HSDB;
+
+#define MAX_INDEXES             10
+//
+// This is a flag stored for each index.
+// Currently it is only used to flag "unique key" types.
+//
+#define SHIMDB_INDEX_UNIQUE_KEY 0x00000001
+
+// index could be of 2 types:
+// containing simply all record and containing only
+// "unique" keys with the records linked (the records have to be sorted for this
+// type of index to work)
+typedef struct _INDEX_INFO {
+	TAGID       tiIndex;            // points at the INDEX_BITS tag
+	TAG         tWhich;             // what tag is being indexed
+	TAG         tKey;               // what subtag is the key?
+	BOOL        bActive;            // are we actually indexing now?
+	BOOL        bUniqueKey;         // are the keys unique?
+	ULONGLONG   ullLastKey;
+	DWORD       dwIndexEntry;       // offset to the next available index entry
+	DWORD       dwIndexEnd;         // one byte past the end of the index block
+	DWORD       dwFlags;
+} INDEX_INFO, * PINDEX_INFO;
+
+//
+// Flags for use in DB structure DB.dwFlags
+//
+
+#define DB_IN_MEMORY           0x00000001
+#define DB_GUID_VALID          0x00000002
+// stringtable is a subdatabase that's created on the side
+// uncorrected!
+typedef struct _DB {
+	// used for both read and write
+
+	HANDLE      hFile;
+	PVOID       pBase;              // for  both memory-mapping & buffered writes
+	BOOL        bWrite;             // was it opened with create?
+	DWORD       dwSize;             // the size of the whole db, in bytes
+
+	DWORD       dwFlags;            // flags (such as IN-memory flag)
+
+	GUID        guidDB;             // optional id for the database
+
+	DWORD       dwIndexes;          // the number of indexes
+	INDEX_INFO  aIndexes[MAX_INDEXES];  // data for the indexes
+
+	// stuff that's used for read
+	HANDLE      hSection;           // for memory-mapping
+	TAGID       tiStringTable;      // pointer to the stringtable for string handling
+	BOOL        bIndexesScanned;    // have the indexes been looked at?
+
+	// stuff that's used for write
+	struct _DB* pdbStringTable;    // stringtable is a subdatabase that's created on the side
+	PVOID       pStringHash;        // stringtable hash (same info as in stringtable)
+	DWORD       dwAllocatedSize;    // the size allocated for buffered writes
+	BOOL        bWritingIndexes;    // are we in the process of allocating index space?
+	TAGID       tiIndexes;          // used during index allocation
+
+	//
+	// BUGBUG Hack alert read from unaligned (v1.0) database is enabled here
+	//
+	BOOL        bUnalignedRead;
+
+
+#ifdef WIN32A_MODE
+	PVOID       pHashStringBody;    // hash of the strings located within the body
+	PVOID       pHashStringTable;   // hash for the strings in the stringtable
+#endif
+
+#ifndef WIN32A_MODE
+	UNICODE_STRING ustrTempStringtable; // string table temp filename
+#else
+	LPCTSTR        pszTempStringtable;
+#endif
+
+
+} DB, * PDB;
+
+//
+// We're using the high 4 bits of the TAGID to
+// say what PDB the TAGID is from. Kludge? Perhaps.
+//
+#define PDB_MAIN            0x00000000
+#define PDB_TEST            0x10000000
+
+// all other entries are local (custom) pdbs
+
+#define PDB_LOCAL           0x20000000
+
+#define TAGREF_STRIP_TAGID  0x0FFFFFFF
+#define TAGREF_STRIP_PDB    0xF0000000
+
+typedef WCHAR* PWSZ;
+
+#define SDB_MAX_EXES 16
+#define SDB_MAX_LAYERS 8
+#define SDB_MAX_SDBS 16
+
+typedef struct tagSDBQUERYRESULT {
+	TAGREF trExes[SDB_MAX_EXES];
+	DWORD  dwExeFlags[SDB_MAX_EXES];//0x40
+	TAGREF trLayers[SDB_MAX_LAYERS];//0x80
+	DWORD  dwLayerFlags;//0xA0
+	TAGREF trApphelp;//0xA4
+	DWORD  dwExeTagsCount;//0xA8
+	DWORD  dwLayerTagsCount;//AC
+	GUID   guidID;//0xB0
+	DWORD  dwFlags;//0xC0
+	DWORD  dwCustomSDBMap;
+	GUID   rgGuidDB[SDB_MAX_SDBS];
+} SDBQUERYRESULT, * PSDBQUERYRESULT;//0x1c8
+
+#define APPCOMPAT_EXE_DATA_MAGIC 0xAC0DEDAB
+#define SWITCHCONTEXT_BRANCH_GUID_MAXCOUNT 48
+
+// ShimLog ShimDebug
+#pragma pack(4)									// Require fixed aligment.
+//private
+typedef struct _ASL_LOG_ENTRY
+{
+	UCHAR  AslLogName[64];
+	PVOID AslLogData;//64
+	ULONG WrittenDataLength;//72
+	ULONG AlignLength;//76 HeapAllocAlignBoundary MaxLengthPreCopy?  2的倍数? 0x400, 0x1000
+	ULONG AppCompatLogFlags;//80 _ASL_LOG_LEVEL
+	ULONG Reversed;//84
+	ULONG EntryStateLock;//88
+}ASL_LOG_ENTRY, *PASL_LOG_ENTRY;//92
+#pragma pack()									// Restore previous aligment.
+
+typedef struct _ASL_LOG
+{
+	ASL_LOG_ENTRY* LogInfoEntryAddress;//链?
+	ASL_LOG_ENTRY  LogInfoEntry;//0x8
+	/* xxxxxx do not use, uncorrected
+	ULONG Padding;			//0x64
+	RTL_CRITICAL_SECTION Lock;//0x68
+
+	PVOID AslLogProcessHeap;//0x90
+	ULONG WrittenDataLength;//0x98
+
+	ULONGLONG DefaultAlignLength;//0xA8
+
+	PVOID DataOffset;//0xB0 Current
+	PVOID AslLogData;//0xB8
+	WCHAR LogFilePath[MAX_PATH];//0xC0 + 208
+
+	HANDLE EtwRegHandle;//0x2C8
+	*/
+	//阿巴阿巴....
+	//....
+}ASL_LOG, *PASL_LOG;
+
+//AppCompatData Fix fix
+typedef struct _APPCOMPAT_EXE_DATA {
+	WCHAR szShimEngine[MAX_PATH];				//+0x0 C:\Windows\System32\apphelp.dll
+	ULONG cbSize;								//+0x208
+	ULONG dwMagic;								//+0x20C 
+	ULONG dwFlags;								//+0x210
+	ULONG dwMachine;							//+0x214
+	SDBQUERYRESULT SdbQueryResult;				//+0x218
+
+	ASL_LOG_ENTRY AslLogEntry[11];				//+0x3e0  as it was on win 8  SepApplyDebugPolicy struct _ASL_LOG *g_ShimDebugLog/AslLogCreate/AslLogPublishToPeb
+	ULONG AslReversed1;							//+0x7d4
+	ULONGLONG AslReversed2;						//+0x7d8
+				
+	struct
+	{
+		ULONGLONG ContextReference;				//+0x7e0 SwitchContextReferenceCount//SwitchBackContextReferenceNumber -- SbUpdateSwitchContextBasedOnDll ? SbSupportedOsList
+		ULONG SwitchContextOSMatch;				//+0x7e8 BOOL? PlatformIdMatch Checked?
+		ULONG SdbTraceEnabled;					//+0x7ec BOOL?
+		HANDLE SdbTraceHandle;					//+0x7f0 EtwEvent
+		//
+		// Windows Internals, Part 1: Chapter 3->Processes and jobs->SwitchBack (p171-p173)
+		//=====================================================
+		// SwitchBack parses this information and correlates it with embedded information in SwitchBackcompatible DLLs (in the .sb_data image section) to 
+		// decide which version of an affected API should be called by the module.Because SwitchBack works at the loaded - module level, 
+		// it enables a process to have both legacy and current DLLs concurrently calling the same API, yet observing different results.
+		// 
+		// SWITCHBRANCH_CACHED_MODULE_TABLE->SWITCHBRANCH_MODULE_TABLE_ENTRY
+		// 
+		// SbPrepareSwitchContext csrstub.exe->IgnoreSwitchContext ?
+		// Windows PlatformId SwitchContext for Fine-Grained PlatformOverride AppCompat Branch Function/API
+		// ->trExes & trLayers
+		// 
+		// kernel32.dll!SbPrepareSwitchContext
+		// kernel32.dll!SbpCreateSwitchContext
+		// kernel32.dll!SbpMergeApphackContexts
+		// kernel32.dll!SbpQueryContexts
+		// apphelp.dll!SdbQueryContext
+		// SdbQueryResult->trExes and SdbQueryResult->trLayers
+		// 48*16 = 768 0x300
+		//
+		struct
+		{
+			ULONGLONG ProcessOsMaxVersionTested;//+0x7f8 SupportOS->MaxVersionTested/SupportOSVersionTest/ProcessOsMaxVersionTested[SbGetProcessOsMaxVersionTested]
+			DWORD DeviceFamily;					//+0x800
+			DWORD Reversed;						//+0x804
+			PACKAGE_VERSION	MinPackageVersion;	//+0x808 IsPackageImage-> 6.2.0.0
+			GUID MaxSupportOSGuid;				//+0x810 for PlatformId 48 [trExesGenericPlatformGuid] ?
+			GUID MinSupportOSGuid;				//+0x820 0x820 - 0x7e0 = 0x40 = 64 [trLayersGenericPlatformGuid]
+			ULONG dwOSVersionCheckFormType;		//+0x830 d.. with SubSystemVersion[1]/MaxversionTested/OperatingSystemVersion/4?/SdbContextQuery +64
+			DWORD BranchGuidTotalCount;			//+0x834
+			GUID BranchGuidList[SWITCHCONTEXT_BRANCH_GUID_MAXCOUNT];//0x838
+		}SwitchBackContext;// Size = 0x340 should be SwitchBranch
+	};
+
+	ULONG dwParentProcessId;					//+0xb38
+	WCHAR szParentImageName[MAX_PATH];			//+0xb3c
+	WCHAR CompatLayerEnvValue[0x100];			//+0xd44 __COMPAT_LAYER 	WCHAR CompatLayerEnvValue[0x200] ???
+	// LayerName ? CommandLayerName??
+	WCHAR Reversed[0x100];						//+0xf44 maybe, UnCorrected! __COMMAND_LINE_OVERRIDE__// __PROCESS_HISTORY?
+	ULONG ImageFileSize;						//+0x1144 
+	ULONG ImageCheckSum;						//+0x1148
+	BOOL AppCompatSupportOSMatchExpect;			//+0x114c
+	BOOL ImageIsPackage;						//+0x1150
+	BOOL SxsSupportedOSVersionSpecified;		//+0x1154
+	BOOL RunLevelSpecified;						//+0x1158
+	BOOL OtherCompatModeEnabled;				//+0x115c
+	ACTCTX_REQUESTED_RUN_LEVEL RunLevel;		//+0x1160
+	ULONG Reversed2;							//+0x1164 [uncorrected] UiAccess?
+
+	ULARGE_INTEGER ManagerFinalAppCompatFlag;	//+0x1168
+	PVOID HookComInterface;						//+0x1170 SE_COM_AddServer
+	HANDLE ComponentOnDemandEtwEvent;			//+0x1178 ntdll!LdrpCheckComponentOnDemandEtwEvent, related to QuirkComponent CodeId?
+	PVOID QuirksTable;							//+0x1180 指向一个结构 ApphelpCacheServiceMapQuirks//QuirkManager
+	ULONG QuirkTableSize;						//+0x1188 QuirkManagerFlags ?
+	ULONG Reversed3;							//+0x118c QuirkUnknowReversed
+
+	UCHAR CobaltProcFlagStruct[40];				//+0x1190 40 = 0x28  ->0x11B8 DO NOT TRY TO RE THIS.QAQ _COBALT_PROCFLAG
+
+	ULONG PdbBufferLength;						//+0x11b8
+	ULONG dwStructSize;							//+0x11bc PdbBufferOffset
+} APPCOMPAT_EXE_DATA, * PAPPCOMPAT_EXE_DATA;	//+0x11c0 == 4544
+// PdbBuffer next to  _APPCOMPAT_EXE_DATA
+
+//
+// SE_InitializeEngine->SeEngineCreate Create: 
+// ManagerPointerList in Heap: g_Engine
+// [0] FlagManager		0x30
+// [1] QuirkManager		0x30
+// [2] ShimManager		0x60
+// [3] HookManager		0x8A0
+// [4] ?
+// [5] ModuleTracker	0x48
+// [6] Router			0x18
+// [7] ComRouter		0xC0
+//
+
+typedef enum {
+	FIX_SHIM,
+	FIX_PATCH,
+	FIX_LAYER,
+	FIX_FLAG
+} FIXTYPE;
+
+typedef enum {
+	FLAG_USER,
+	FLAG_KERNEL
+} FLAGTYPE;
+
+
+//FIX_FLAG
+typedef struct _APPCOAMPAT_FLAG_LUA
+{
+
+	struct
+	{
+		UCHAR RunAsInvoker : 1;				// 应用程序应使用与父进程相同的 Windows 权限和用户权限运行。此设置相当于没有应用程序的应用程序兼容性数据库。应用程序以与启动它的父进程相同的权限启动，这减少了应用程序的安全风险。这是因为对于大多数应用程序来说，父级是 Explorer.exe，它作为标准用户应用程序运行。从以完全管理员身份运行的 cmd.exe shell 启动的 RunAsInvoker 应用程序将使用完全管理员访问令牌“以调用者身份运行”。
+		UCHAR RunAsHighest : 1;				// 该应用程序可由管理员和标准用户运行，并根据用户的特权和用户权限调整其行为;该应用程序需要比标准用户更高的特权和用户权限，但不要求用户是本地管理员组的成员。
+		UCHAR RunAsAdmin : 1;				// 应用程序应仅为管理员运行，必须使用完整的管理员访问令牌启动，并且无法在标准用户上下文中正确运行。此请求的执行级别标记是为要求用户是本地管理员组成员的 Windows Vista 之前的应用程序保留的。	
+		UCHAR Reversed1 : 5;
+		UCHAR Reversed2 : 8;
+	} DisableUiAccess;
+	struct
+	{
+		UCHAR RunAsInvoker : 1;				// 应用程序应使用与父进程相同的 Windows 权限和用户权限运行。此设置相当于没有应用程序的应用程序兼容性数据库。应用程序以与启动它的父进程相同的权限启动，这减少了应用程序的安全风险。这是因为对于大多数应用程序来说，父级是 Explorer.exe，它作为标准用户应用程序运行。从以完全管理员身份运行的 cmd.exe shell 启动的 RunAsInvoker 应用程序将使用完全管理员访问令牌“以调用者身份运行”。
+		UCHAR RunAsHighest : 1;				// 该应用程序可由管理员和标准用户运行，并根据用户的特权和用户权限调整其行为;该应用程序需要比标准用户更高的特权和用户权限，但不要求用户是本地管理员组的成员。
+		UCHAR RunAsAdmin : 1;				// 应用程序应仅为管理员运行，必须使用完整的管理员访问令牌启动，并且无法在标准用户上下文中正确运行。此请求的执行级别标记是为要求用户是本地管理员组成员的 Windows Vista 之前的应用程序保留的。	
+		UCHAR Reversed1 : 5;
+		UCHAR Reversed2 : 8;
+	} EnableUiAccess;
+
+	UCHAR NoVirtualization : 1;				// 关闭该应用程序的文件虚拟化和注册表虚拟化
+	UCHAR NoSignatureCheck : 1;				// 关闭应用程序的签名检查
+	UCHAR AdditiveRunAsHighest : 1;			// 当应用程序在没有人请求更高特权提升时接收RunAsHighest标志。这意味着，如果清单/AppCompatLayer是asInvoker/RunAsInvoker，将设置覆盖为RunAsHighest，但如果清单/AppCompatLayer是requireAdministrator/RunAsAdmin，没有任何影响。该标志将仅用于提高您的提升级别（到highestAvailable），而绝不会用于降低提升级别（从requireAdministrator）。
+	UCHAR NoCfgCheck : 1;					// 0x800000000
+	UCHAR NoImageExpansion : 1;				// 0x1000000000
+	UCHAR Reversed3 : 3;
+	UCHAR Reversed4 : 8;
+	USHORT Reversed5 : 16;
+}APPCOAMPAT_FLAG_LUA, * PAPPCOAMPAT_FLAG_LUA;
+
+typedef struct _APPCOAMPAT_FLAG_INSTALL
+{
+	UCHAR GenericInstaller : 1;				// 与通用安装程序匹配。
+	UCHAR SpecificInstaller : 1;			// 将应用程序标记为显示为旧版应用程序安装程序。标记文件后，SpecificInstaller 兼容性修复程序可以应用安装缓解措施，其中包括以管理员身份运行应用程序和应用 WRPMitigation 兼容性修复程序
+	UCHAR SpecificNonInstaller : 1;			// 将应用程序标记为不是应用程序安装文件（如果 GenericInstaller 函数找到并怀疑该应用程序是安装程序）。应用此兼容性修复程序后，应用程序将不再提示提升权限，或执行其他与安装相关的操作。
+	UCHAR Reversed1 : 5;
+	UCHAR Reversed2 : 8;
+	USHORT Reversed3;
+	ULONG Reversed4;
+}APPCOAMPAT_FLAG_INSTALL, * PAPPCOAMPAT_FLAG_INSTALL;
+
+// #define ..*..FLAG or typedef struct .. union .. will be better?
+// UnCorrected
+
+typedef struct _COAMPAT_FIX_FLAG
+{
+	union
+	{
+		ULARGE_INTEGER FixFlag;
+		//FLAG_MASK_KERNEL = 0x5005, [28]
+		//FLAG_MASK_USER = 0x5008, [62]
+		// 
+		// ? typedef struct ... NTVDM_FLAGS, *PNTVDM_FLAGS ?
+		// 
+        //FLAGS_NTVDM1 = 0x5009,? [130]
+        //FLAGS_NTVDM2 = 0x500A,? [18]
+        //FLAGS_NTVDM3 = 0x500B,? [26]
+		//FLAG_MASK_SHELL [Deprecated]??
+		//FLAG_MASK_FUSION only 0x1
+		//FLAG_PROCESSPARAM [2] EnableDEP: 0x20000:17 LoadLibraryRedirectFlag: 0x200000:21
+		APPCOAMPAT_FLAG_LUA LuaFlags; //FLAG_LUA [6]
+		APPCOAMPAT_FLAG_INSTALL InstallFlags; //FLAG_INSTALL [3]
+	};
+}COAMPAT_FIX_FLAG, * PCOAMPAT_FIX_FLAG;
+
+// Private, winbasep.h
+//  ProcessParameters->WindowFlags = StartInfo->dwFlags;
+#define STARTF_HASSHELLDATA     0x00000400  // ;Internal
+#define STARTF_TITLEISLOCALALLOCED 0x00004000
+
+// TODO?
+// NTKernel PDCRevocation
+// [PackagedDataInfo]
+// BasepGetPackagedAppInfoForFile ->GetPackagedDataForFile ->ExtendedPackagedAppContext::GetPackagedDataForFile 
+// sin win 10 1903 10.0.18362.1
+// if ( (HIDWORD(v300) & 0x10000) != 0 )
+//		v331 &= ~3ui64;
+//  BaseCheckVDMp call csrss VDM, StartupInfo.dwFlags 也在其中 CsrClientCallServer((PCSR_API_MESSAGE)ApiMessage, v76, (CSR_API_NUMBER)0x10010005, 184u);

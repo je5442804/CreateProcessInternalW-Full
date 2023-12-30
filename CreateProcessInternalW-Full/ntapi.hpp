@@ -1,5 +1,6 @@
-#pragma once
-#define WIN32_NO_STATUS
+﻿#pragma once
+#define UMDF_USING_NTSTATUS
+#include <ntstatus.h>
 #include "structs.hpp"
 #include "csrss.hpp"
 
