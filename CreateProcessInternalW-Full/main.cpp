@@ -1,9 +1,8 @@
 ﻿#include "ntapi.hpp"
 #include "otherapi.hpp"
-//#include "csrss.hpp"
 #include <strsafe.h>
 
-// #define TEST
+#define TEST2
 int wmain(int argc, wchar_t* argv[])
 {
 	PEB Peb = { 0 };
@@ -25,19 +24,15 @@ int wmain(int argc, wchar_t* argv[])
 	
 	//
 	// wchar_t cmd[] = L"notepad";
-	// wchar_t cmd[] = L"C:\\Users\\Administrator\\Downloads\\IPPLUS\\IPPLUS.EXE";
-	// wprintf(L"[*] OFFSET: %d\n", FIELD_OFFSET(BASE_SXS_CREATEPROCESS_MSG, ApplicationUserModelId));
-	// WCHAR ApplicationUserModelId[APPLICATION_USER_MODEL_ID_MAX_LENGTH]; //sizeof(ApplicationUserModelId);
+	// wchar_t cmd2[] = L"C:\\Users\\Administrator\\Downloads\\IPPLUS\\IPPLUS.EXE";
 	// process.cpp
 	//
-	//PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT
-
+	       
 	WCHAR WideString[] = L"I-am-BNO-in-BaseNamedObjects";
 	SIZE_T attributeListLength = 0;//sizeof(PROC_THREAD_ATTRIBUTE_LIST)
 	PROC_THREAD_BNOISOLATION_ATTRIBUTE bnoIsolation = { 0 };
 	bnoIsolation.IsolationEnabled = TRUE;
 	RtlMoveMemory(&bnoIsolation.IsolationPrefix, WideString, sizeof(WideString) - sizeof(UNICODE_NULL));
-
 
 	InitializeProcThreadAttributeList(NULL, 2, 0, &attributeListLength);//
 
@@ -55,6 +50,8 @@ int wmain(int argc, wchar_t* argv[])
 		wprintf(L"UpdateProcThreadAttribute Fail: %ld\n", GetLastError());
 	}
 	// PROCESS_CREATION_MITIGATION_POLICY_WIN32K_SYSTEM_CALL_DISABLE_ALWAYS_ON
+	// 
+	// PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_PREFER_SYSTEM32_ALWAYS_ON
 	// Forces image load preference to prioritize the Windows install System32
 	// folder before dll load dir, application dir and any user dirs set.
 	// - Affects IAT resolution standard search path only, NOT direct LoadLibrary or
@@ -63,7 +60,7 @@ int wmain(int argc, wchar_t* argv[])
 		// | PROCESS_CREATION_MITIGATION_POLICY_BLOCK_NON_MICROSOFT_BINARIES_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_FONT_DISABLE_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_FORCE_RELOCATE_IMAGES_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_PROHIBIT_DYNAMIC_CODE_ALWAYS_ON;
 
 	UpdateProcThreadAttribute(StartupInfo.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, &policy, sizeof(policy), NULL, NULL);
-
+	
 #ifndef TEST
 
 	BOOL BoolStatus = CreateProcessInternalW(
@@ -81,7 +78,6 @@ int wmain(int argc, wchar_t* argv[])
 		NULL
 	);
 	
-	
 #else
 	BOOL BoolStatus = CreateProcessW(
 		NULL,
@@ -96,9 +92,11 @@ int wmain(int argc, wchar_t* argv[])
 		&ProcessInformation
 	);
 #endif 
+	
 	wprintf(L"CreateProcessInternalW: %ls\n", BoolStatus ? L"Success" : L"Fail");
 	wprintf(L"Last Win32Error: %ld\n", NtCurrentTeb()->LastErrorValue);
 	wprintf(L"Last NtstatusError: 0x%08lx\n", NtCurrentTeb()->LastStatusValue);
+
 	if (ProcessInformation.hProcess)
 	{
 		wprintf(L"hProcess: 0x%p, PID = %ld\n", ProcessInformation.hProcess, ProcessInformation.dwProcessId);
@@ -114,16 +112,14 @@ int wmain(int argc, wchar_t* argv[])
 		{
 			return 2;
 		}
-		wprintf(L"Peb.SystemDefaultActivationContextData 0x%p\n", Peb.SystemDefaultActivationContextData);
-		wprintf(L"Peb.ActivationContextData 0x%p\n", Peb.ActivationContextData);
-		wprintf(L"=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\n");
+		wprintf(L"Peb.SystemDefaultActivationContextData: 0x%p\n", Peb.SystemDefaultActivationContextData);
+		wprintf(L"Peb.ActivationContextData:              0x%p\n", Peb.ActivationContextData);
+		wprintf(L"=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
 		NtWaitForSingleObject(ProcessInformation.hProcess, FALSE, NULL);
 		Status = NtQueryInformationProcess(ProcessInformation.hProcess, ProcessBasicInformation, &BasicInfo, sizeof(PROCESS_BASIC_INFORMATION), NULL);
-		wprintf(L"Process Exited: 0x%08lx\n", BasicInfo.ExitStatus);
+		wprintf(L"Process %lld Exited: 0x%08lx\n", (ULONGLONG)BasicInfo.UniqueProcessId, BasicInfo.ExitStatus);
 		NtClose(ProcessInformation.hProcess);
 		NtClose(ProcessInformation.hThread);
 	}
-	
 	return 0;
 }
-

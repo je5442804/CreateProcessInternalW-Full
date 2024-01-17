@@ -4,7 +4,6 @@
 #include "csrss.hpp"
 #include "syscalls.hpp"
 
-
 BOOL WINAPI CreateProcessInternalW(
 	HANDLE hUserToken,
 	LPCWSTR lpApplicationName,
@@ -69,14 +68,13 @@ BOOL WINAPI CreateProcessInternalW(
 	RTL_PATH_TYPE PathType = RtlPathTypeUnknown;
 
 	PSECURITY_CAPABILITIES SecurityCapabilities = 0;
-	PWSTR UnicodeEnvironment = 0;
+	LPVOID UnicodeEnvironment = 0;
 
 	LPSTARTUPINFOEXW ExtendStartupInfo = NULL;
 	STARTUPINFOW StartupInfo = { 0 };
 
 	LPWSTR FilePart = 0;
 	LPWSTR CurrentDirectoryHeap = NULL;
-	PWSTR AppExecutionAliasPathHeap = NULL;
 	PWSTR AliasPathHeap = NULL;
 	DWORD FullPathNameLength = 0;
 	OBJECT_ATTRIBUTES LocalProcessObjectAttribute = { 0 };
@@ -84,7 +82,11 @@ BOOL WINAPI CreateProcessInternalW(
 	POBJECT_ATTRIBUTES ProcessObjectAttributes = { 0 };
 	POBJECT_ATTRIBUTES ThreadObjectAttributes = { 0 };
 	BOOL DefaultInheritOnly = FALSE;
-	HANDLE ActivationToken = NULL;
+
+	ACTIVATION_TOKEN_INFO ActivationTokenInfo = { 0 };
+	HANDLE ActivationToken = NULL;//兼容
+	HANDLE AppXPackageImpersonateToken = NULL;
+
 	PWSTR ExePathFullBuffer = NULL;
 	LPWSTR QuotedCmdLine = NULL;
 	HANDLE FileHandle = NULL;
@@ -102,7 +104,7 @@ BOOL WINAPI CreateProcessInternalW(
 	DWORD ElevationFlags = 0;
 
 	USHORT AppCompatImageMachine = 0;
-	DWORD DeviceFamilyID = 0; //DEVICEFAMILYINFOENUM_DESKTOP = 3
+	DWORD DeviceFamilyID = 0;
 
 	HANDLE VdmWaitHandle = NULL;
 	ANSI_STRING AnsiStringVDMEnv = { 0 };
@@ -112,9 +114,11 @@ BOOL WINAPI CreateProcessInternalW(
 	ULONG VdmTaskId = 0;
 	BOOL VdmPartiallyCreated = FALSE;
 	BOOLEAN bSaferChecksNeeded = FALSE;
-	BOOLEAN QueryImageFileKeyFailPresent = FALSE;
+	BOOLEAN AlreadyQueryImageFileDebugger = FALSE;
 	PWSTR ImageFileDebuggerCommand = NULL;
-	BOOL AppAliasRedirect = FALSE;
+	//BOOL AppAliasRedirect = FALSE;
+
+	ExtendedPackagedAppContext::ExtendedPackagedAppContext* lpExtendedPackagedAppContext = NULL;
 
 	HANDLE IFEOKey = NULL;
 	LPPROC_THREAD_ATTRIBUTE_LIST lpAttributeList = { 0 };
@@ -124,7 +128,7 @@ BOOL WINAPI CreateProcessInternalW(
 	PS_MITIGATION_OPTIONS_MAP MitigationOptions = { 0 };
 	PS_MITIGATION_AUDIT_OPTIONS_MAP MitigationAuditOptions = { 0 };
 	WIN32K_SYSCALL_FILTER Win32kFilter = { 0 };
-	ULONG FsctlProcessMitigation = 0;
+	ULONG AllApplicationPackagesPolicy  = 0;
 	ULONG ComponentFilter = 0;
 	MAXVERSIONTESTED_INFO MaxVersionTested = { 0 };
 	PS_BNO_ISOLATION_PARAMETERS BnoIsolation = { 0 };
@@ -132,7 +136,7 @@ BOOL WINAPI CreateProcessInternalW(
 	ISOLATION_MANIFEST_PROPERTIES IsolationManifest = { 0 };
 	UNICODE_STRING UnknowStringProcThread20 = { 0 };
 	ULONG_PTR UnknowULONG_PTRProcThread21 = NULL;
-	BOOLEAN PackageFullNameSpecified = FALSE;
+	BOOLEAN PackageNameSpecified = FALSE;
 	BOOL IsolationEnabled = FALSE;
 	BOOL GetMitigationPolicySuccess = FALSE;
 	PS_STD_HANDLE_INFO StdHandle = { 0 };
@@ -149,17 +153,22 @@ BOOL WINAPI CreateProcessInternalW(
 	PAPPX_PROCESS_CONTEXT AppXContent = 0;
 	PAPPX_PROCESS_CONTEXT AppXProcessContext = 0;
 	HANDLE AppXTokenHandle = NULL;
-
+	
+	BOOL AppXPackageBnoIsolationDetected = FALSE;
 	DWORD AppModelPolicyValue = 0;
 	ExtendedAppExecutionAliasInfo* AppExecutionAliasInfo = 0;
 	PS_PKG_CLAIM PackageClaims = { 0 };
 	ULONG_PTR AttributesPresent = 0;
 	BOOL AppXPackageBreakaway = 0;
 	BOOL BypassAppxExtension = 0;
-	BOOL AccessDenied = FALSE;
+
 	UNICODE_STRING SubSysCommandLine = { 0 };
 
-	ULONG AppXSuspendRequired = 0;
+	SIZE_T PackageCommandLineLength = 0;
+	LPCWSTR PackageCommandLineLink = NULL;
+	PWSTR PackageNewCommandLine = NULL;
+	BOOL AlreadyGetPackagedAppInfo = FALSE;
+	ULONG ActivationFlag = 0;// Unknow
 	//DWORD UnknowActivationSxsFlags = 0;
 	PVOID AppXEnvironmentExtension = 0;
 	PWSTR NameBuffer = NULL;
@@ -225,7 +234,7 @@ BOOL WINAPI CreateProcessInternalW(
 		BaseSetLastNTError(STATUS_INVALID_PARAMETER);//VDM
 		return FALSE;
 	}
-	else if (!(dwCreationFlags & CREATE_SHARED_WOW_VDM) && *(BOOLEAN*)((char*)BaseStaticServerData + 0x7F4))//BASE_STATIC_SERVER_DATA->DefaultSeparateVDM
+	else if (!(dwCreationFlags & CREATE_SHARED_WOW_VDM) && BaseStaticServerData->DefaultSeparateVDM)
 	{
 		dwCreationFlags |= CREATE_SEPARATE_WOW_VDM;
 	}
@@ -275,7 +284,7 @@ BOOL WINAPI CreateProcessInternalW(
 	{
 		ProcessFlags |= PROCESS_CREATE_FLAGS_INHERIT_FROM_PARENT;
 	}
-	if (dwCreationFlags & CREATE_SUSPENDED)
+	if (!(dwCreationFlags & CREATE_SUSPENDED))
 	{
 		ProcessFlags |= PROCESS_CREATE_FLAGS_SUSPENDED;
 	}
@@ -340,15 +349,15 @@ BOOL WINAPI CreateProcessInternalW(
 	if (dwCreationFlags & CREATE_SECURE_PROCESS)
 	{
 		AttributeList.Attributes[AttributeListCount].Attribute = PS_ATTRIBUTE_SECURE_PROCESS;
-		AttributeList.Attributes[AttributeListCount].Size = sizeof(ULONGLONG);		//	Trustlet 0 Attributes && 0 Data inside...
+		AttributeList.Attributes[AttributeListCount].Size = sizeof(ULONGLONG);		//	Trustlet 0 Attributes && 0 Data inside...  nonconstant
 		AttributeList.Attributes[AttributeListCount].ReturnLength = 0;
-		AttributeList.Attributes[AttributeListCount].ValuePtr = &TrustletAttributes;//  in PPS_TRUSTLET_CREATE_ATTRIBUTES, since THRESHOLD
+		AttributeList.Attributes[AttributeListCount].ValuePtr = &TrustletAttributes;//  in PPS_TRUSTLET_CREATE_ATTRIBUTES, since THRESHOLD 
 	}
 	lpProcessInformation->hProcess = NULL;
 	lpProcessInformation->hThread = NULL;
 	if (lpEnvironment && !(dwCreationFlags & CREATE_UNICODE_ENVIRONMENT))
 	{
-		Status = RtlCreateEnvironmentEx(lpEnvironment, (PVOID*)&UnicodeEnvironment, RTL_CREATE_ENVIRONMENT_TRANSLATE);
+		Status = RtlCreateEnvironmentEx(lpEnvironment, &UnicodeEnvironment, RTL_CREATE_ENVIRONMENT_TRANSLATE);
 		if (!NT_SUCCESS(Status))
 		{
 			BaseSetLastNTError(Status);
@@ -377,7 +386,7 @@ BOOL WINAPI CreateProcessInternalW(
 		{
 			// 23->23->25->26->27
 
-			wprintf(L"[!] AttributeListCount: %d\n", AttributeListCount);
+			wprintf(L"[!] AttributeListCount: %ld\n", AttributeListCount);
 			Status = BasepConvertWin32AttributeList(
 				lpAttributeList,
 				0,
@@ -385,28 +394,27 @@ BOOL WINAPI CreateProcessInternalW(
 				&PackageFullName,
 				&SecurityCapabilities,
 				&HasHandleList,
-				&ParentProcessHandle,		// PSEUDOCONSOLE_INHERIT_CURSOR ?
-				&ConsoleHandleInfo,			// CONSOLE_HANDLE_INFO   //IN ProcessParameters ?<- CONSOLE_IGNORE_CTRL_C = 0x1// CONSOLE_HANDLE_REFERENCE = 0x2// CONSOLE_USING_PTY_REFERENCE = 0x4
-				&MitigationOptions,			// PS_MITIGATION_OPTIONS_MAP 
-				&MitigationAuditOptions,	// PS_MITIGATION_AUDIT_OPTIONS_MAP
-				&Win32kFilter,              // WIN32K_SYSCALL_FILTER 11
-				&FsctlProcessMitigation,	// [微软2023/10 紧急添加 one by one 2023/11]
-				&ComponentFilter,           // int // ULONG ComponentFilter
-				&MaxVersionTested,          // MAXVERSIONTESTED_INFO ???
-				&BnoIsolation,              // PS_BNO_ISOLATION_PARAMETERS
-				&DesktopAppPolicy,			// DWORD (PROCESS_CREATION_DESKTOP_APP_*)
-				&IsolationManifest,         // in ISOLATION_MANIFEST_PROPERTIES* // rev (diversenok) // since 19H2+
+				&ParentProcessHandle,			// PSEUDOCONSOLE_INHERIT_CURSOR ?
+				&ConsoleHandleInfo,				// CONSOLE_HANDLE_INFO   //IN ProcessParameters ?<- CONSOLE_IGNORE_CTRL_C = 0x1// CONSOLE_HANDLE_REFERENCE = 0x2// CONSOLE_USING_PTY_REFERENCE = 0x4
+				&MitigationOptions,				// PS_MITIGATION_OPTIONS_MAP 
+				&MitigationAuditOptions,		// PS_MITIGATION_AUDIT_OPTIONS_MAP
+				&Win32kFilter,					// WIN32K_SYSCALL_FILTER 11
+				&AllApplicationPackagesPolicy,	// [微软2023/10 紧急添加 one by one 2023/11]
+				&ComponentFilter,				// ULONG ComponentFilter
+				&MaxVersionTested,				// MAXVERSIONTESTED_INFO ???
+				&BnoIsolation,					// PS_BNO_ISOLATION_PARAMETERS
+				&DesktopAppPolicy,				// DWORD (PROCESS_CREATION_DESKTOP_APP_*)
+				&IsolationManifest,				// in ISOLATION_MANIFEST_PROPERTIES* // rev (diversenok) // since 19H2+
 				&UnknowStringProcThread20,
 				&UnknowULONG_PTRProcThread21,
-				&TrustletAttributes,		// [win 11 22H2++ >=22600 in PS_TRUSTLET_CREATE_ATTRIBUTES* TrustletType_TrustedApp]
-				&ProcessFlags,				// [win 11 才有 >= 22000]
+				&TrustletAttributes,			// [win 11 22H2++ >=22600 in PS_TRUSTLET_CREATE_ATTRIBUTES* TrustletType_TrustedApp]
+				&ProcessFlags,					// [win 11 才有 >= 22000]
 				&AttributeList,
 				&AttributeListCount,
-				27);// OPTIONAL ProcThreadAttributeMax Count [Count] 32 - 5Present = 27 AttributeList[Max=32]
-			wprintf(L"[!] AttributeListCount: %d\n", AttributeListCount);
+				27);							// OPTIONAL ProcThreadAttributeMax Count [Count] 32 - 5Present = 27 AttributeList[Max=32]
+			wprintf(L"[!] AttributeListCount: %ld\n", AttributeListCount);
 			if (!NT_SUCCESS(Status))
 			{
-				wprintf(L"UpdateProcThreadAttribute Fail: %ld\n", GetLastError());
 				BaseSetLastNTError(Status);
 				bStatus = FALSE;
 				goto Leave_Cleanup;
@@ -415,7 +423,7 @@ BOOL WINAPI CreateProcessInternalW(
 			if (lpAttributeList->PresentFlags & ProcThreadAttributePresentFlag(ProcThreadAttributePackageFullName))
 			{
 				
-				PackageFullNameSpecified = TRUE;
+				PackageNameSpecified = TRUE;
 				if (SecurityCapabilities)
 				{
 					BaseSetLastNTError(STATUS_INVALID_PARAMETER);
@@ -424,7 +432,7 @@ BOOL WINAPI CreateProcessInternalW(
 				}
 			}
 
-			if ((lpAttributeList->PresentFlags & ProcThreadAttributePresentFlag(ProcThreadAttributeBnoIsolation)))//  XXX? winbase.h ProcThreadAttribute???*** == 19
+			if ((lpAttributeList->PresentFlags & ProcThreadAttributePresentFlag(ProcThreadAttributeBnoIsolation)))
 			{
 				IsolationEnabled = TRUE;
 			}
@@ -439,7 +447,6 @@ BOOL WINAPI CreateProcessInternalW(
 
 		}
 	}
-	
 	if (!(dwCreationFlags & CREATE_SEPARATE_WOW_VDM))
 	{
 		BOOL IsInJob = FALSE;
@@ -474,7 +481,6 @@ BOOL WINAPI CreateProcessInternalW(
 		lpCurrentDirectory = CurrentDirectoryHeap;
 	}
 	
-	
 	Status = BaseFormatObjectAttributes(
 		&LocalProcessObjectAttribute,
 		lpProcessAttributes,
@@ -508,17 +514,23 @@ BOOL WINAPI CreateProcessInternalW(
 
 		AppXTokenHandle = TokenHandle;
 
-		if (AppExecutionAliasInfo && AppExecutionAliasInfo->BreakawayModeLaunch != TRUE)
+		if (lpExtendedPackagedAppContext && lpExtendedPackagedAppContext->Breakaway != TRUE)
+		{
+			AppXTokenHandle = lpExtendedPackagedAppContext->PresentActivationTokenInfo.ActivationTokenHandle;
+			TokenHandle = lpExtendedPackagedAppContext->PresentActivationTokenInfo.ActivationTokenHandle;
+		}
+		else if (AppExecutionAliasInfo && AppExecutionAliasInfo->BreakawayModeLaunch != TRUE)
 		{
 			wprintf(L"[+] AppExecutionAliasInfo is exist and no Breakaway, we try to set with AppAliasTokenHandle!\n");
 			AppXTokenHandle = AppExecutionAliasInfo->TokenHandle;
-			TokenHandle = AppXTokenHandle;
+			TokenHandle = AppExecutionAliasInfo->TokenHandle;
 		}
 		else if (ActivationToken)
 		{
 			AppXTokenHandle = ActivationToken;
 			TokenHandle = ActivationToken;
 		}
+
 		if (NameBuffer)
 		{
 			RtlFreeHeap(RtlProcessHeap(), 0, NameBuffer);
@@ -547,7 +559,7 @@ BOOL WINAPI CreateProcessInternalW(
 		}
 		if (AppXEnvironment)
 		{
-			RtlDestroyEnvironment((PWSTR)AppXEnvironment);
+			RtlDestroyEnvironment(AppXEnvironment);
 			AppXEnvironment = NULL;
 		}
 		if (AppXProcessContext)
@@ -599,6 +611,7 @@ BOOL WINAPI CreateProcessInternalW(
 			CsrFreeCaptureBuffer(CaptureBuffer);
 			CaptureBuffer = NULL;
 		}
+		
 		BasepFreeBnoIsolationParameter(&BnoIsolation);
 		SearchRetry = TRUE;
 		QuoteInsert = FALSE;
@@ -619,7 +632,7 @@ BOOL WINAPI CreateProcessInternalW(
 
 			// check for lead quote
 			if (*WhiteScan == L'\"') {
-				wprintf(L"[*] Lead Quote Detected , SearchRetry Disabled...\n");
+				wprintf(L"[*] Lead Quote Detected, SearchRetry Disabled...\n");
 				SearchRetry = FALSE;
 				WhiteScan++;
 				lpApplicationName = WhiteScan;
@@ -769,7 +782,12 @@ BOOL WINAPI CreateProcessInternalW(
 		wprintf(L"[+] Final lpCommandLine = %ls\n", lpCommandLine);
 		//wprintf(L"[*] Win32ImagePath: %ls\n", Win32ImagePath.Buffer);
 		//wprintf(L"[*] NtImagePath: %ls\n", NtImagePath.Buffer);
-		if (PathType > RtlPathTypeRootLocalDevice || !BasepAdjustApplicationPath(&Win32ImagePath))//???????????
+
+		if (PathType != RtlPathTypeDriveAbsolute 
+			&& PathType != RtlPathTypeLocalDevice 
+			&& PathType != RtlPathTypeRootLocalDevice 
+			&& PathType != RtlPathTypeUncAbsolute
+			|| !BasepAdjustApplicationPath(&Win32ImagePath))
 		{
 			UNICODE_STRING ExePathFullBufferString = { 0 };
 			ExePathFullBufferString.Buffer = NULL;
@@ -785,6 +803,7 @@ BOOL WINAPI CreateProcessInternalW(
 			ExePathFullBuffer = ExePathFullBufferString.Buffer;
 			ExePathFullBufferString = { 0 };
 		}
+
 		if (DesktopAppPolicy == (PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_ENABLE_PROCESS_TREE | PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_DISABLE_PROCESS_TREE))
 		{
 			BaseSetLastNTError(STATUS_INVALID_PARAMETER);
@@ -792,7 +811,7 @@ BOOL WINAPI CreateProcessInternalW(
 			goto Leave_Cleanup;
 		}
 
-		if (NtCurrentPeb()->IsPackagedProcess && !AppExecutionAliasInfo)
+		if (NtCurrentPeb()->IsPackagedProcess && !AppExecutionAliasInfo && !lpExtendedPackagedAppContext)
 		{
 			AppModelPolicyValue = AppModelPolicy_ImplicitPackageBreakaway_Denied;
 			Status = AppModelPolicy_GetPolicy_Internal(
@@ -893,7 +912,7 @@ BOOL WINAPI CreateProcessInternalW(
 					SecurityCapabilities = AppXProcessContext->AppXSecurityCapabilities;
 				}
 
-				if (AppXProcessContext->AppXCurrentDirectory && !AppExecutionAliasInfo)
+				if (AppXProcessContext->AppXCurrentDirectory && !AppExecutionAliasInfo && (!lpExtendedPackagedAppContext || !lpExtendedPackagedAppContext->IsAppExecutionAliasType))
 				{
 					if (CurrentDirectoryHeap)
 					{
@@ -911,9 +930,9 @@ BOOL WINAPI CreateProcessInternalW(
 			}
 		}
 		//wprintf(L"[*] Present CurrentTokenHandle: 0x%p\n", CurrentTokenHandle);
-		if (IsolationEnabled)// Isolation容器限制
+		if (IsolationEnabled)// Isolation限制，禁止AppContainer?
 		{
-			if (SecurityCapabilities || NtCurrentPeb()->IsAppContainer)// IsAppContainer  AppContainer not support
+			if (SecurityCapabilities || NtCurrentPeb()->IsAppContainer)// IsAppContainer AppContainer not support
 			{
 				BaseSetLastNTError(STATUS_NOT_SUPPORTED);
 				bStatus = FALSE;
@@ -926,7 +945,8 @@ BOOL WINAPI CreateProcessInternalW(
 		{
 			CurrentTokenHandle = AppXTokenHandle;
 		}
-		//wprintf(L"[*] CurrentTokenHandle: 0x%p\n", CurrentTokenHandle);
+
+
 		Status = GetEmbeddedImageMitigationPolicy(
 			&IsolationManifest,
 			&MitigationOptions,
@@ -981,12 +1001,13 @@ BOOL WINAPI CreateProcessInternalW(
 		// 
 		// From insider SDK 10.0.25295.0 and also from MSDN.
 		// TODO: crbug.com/1414570 Remove after updating SDK
-		// 
-		// PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT
+		//
+		// AllApplicationPackagesPolicy FsctlProcessMitigation [LPAC: Less Privileged AppContainer] 禁止LPAC的Fsctl调用 
 		//
 		
-		if (FsctlProcessMitigation)//AllApplicationPackagesPolicyFlags
+		if (AllApplicationPackagesPolicy & PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT)
 		{
+			//wprintf(L"[-] AllApplicationPackagesPolicy & PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT Status = 0x%08lx\n", Status);
 			if (OSBuildNumber > 22000)
 			{
 				MitigationOptions.Map[2] &= ~PS_MITIGATION_OPTION3_FSCTL_SYSTEM_CALL_DISABLE_MASK;//Cleanup Mask Already set before
@@ -1003,7 +1024,7 @@ BOOL WINAPI CreateProcessInternalW(
 			AttributeListTemp.Attributes[0].Value = (ULONG_PTR)&MitigationOptions;
 			BasepAddToOrUpdateAttributesList(&AttributeListTemp, 1, &AttributeList, &AttributeListCount);
 		}
-
+		
 		if (SecurityCapabilities)
 		{
 			Status = BasepCreateLowBox(CurrentTokenHandle, SecurityCapabilities, &LowBoxToken);
@@ -1041,28 +1062,53 @@ BOOL WINAPI CreateProcessInternalW(
 				lpEnvironment = AppXEnvironmentExtension;
 			}
 		}
+
+
+		if (AppXPackageBnoIsolationDetected)
+		{
+			AttributeListTemp.Attributes[0].Attribute = PS_ATTRIBUTE_BNO_ISOLATION;
+			AttributeListTemp.Attributes[0].Size = sizeof(PS_BNO_ISOLATION_PARAMETERS);
+			AttributeListTemp.Attributes[0].ReturnLength = 0;
+			AttributeListTemp.Attributes[0].Value = (ULONG_PTR)&MitigationOptions;
+			BasepAddToOrUpdateAttributesList(&AttributeListTemp, 1, &AttributeList, &AttributeListCount);
+			IsolationEnabled = TRUE;
+		}
 		if (IsolationEnabled)
 		{
-			// Win 11  
-			// Status = BasepProcessBnoIsolationParameter(CurrentTokenHandle, &BnoIsolation)
-			// if...
-			wprintf(L"[!] BnoIsolation Enabled: %ls\n", BnoIsolation.IsolationPrefix.Buffer);
-			if (BnoIsolation.Handles)
+			//
+			// New
+			//
+			if (!SecurityCapabilities && !NtCurrentPeb()->IsAppContainer)
 			{
-				Status = STATUS_INVALID_PARAMETER;
-			}
-			else if (BnoIsolation.IsolationEnabled)
-			{
-				if (!BnoIsolation.IsolationPrefix.Buffer)
+				// Win 11  
+				// Status = BasepProcessBnoIsolationParameter(CurrentTokenHandle, &BnoIsolation)
+				// if...
+				wprintf(L"[!] BnoIsolation Enabled: %ls\n", BnoIsolation.IsolationPrefix.Buffer);
+				if (BnoIsolation.Handles)
 				{
 					Status = STATUS_INVALID_PARAMETER;
 				}
-				Status = BasepCreateBnoIsolationObjectDirectories(CurrentTokenHandle, &BnoIsolation);
+				else
+				{
+					if (!BnoIsolation.IsolationEnabled)
+					{
+						Status = STATUS_SUCCESS;
+					}
+					else if (!BnoIsolation.IsolationPrefix.Buffer)
+					{
+						Status = STATUS_INVALID_PARAMETER;
+					}
+					else // BnoIsolation.IsolationEnabled && BnoIsolation.IsolationPrefix.Buffer
+					{
+						Status = BasepCreateBnoIsolationObjectDirectories(CurrentTokenHandle, &BnoIsolation);
+					}
+				}
 			}
 			else
 			{
-				Status = STATUS_SUCCESS;
+				Status = STATUS_NOT_SUPPORTED;
 			}
+			
 			if (!NT_SUCCESS(Status))
 			{
 				BaseSetLastNTError(Status);
@@ -1139,15 +1185,16 @@ BOOL WINAPI CreateProcessInternalW(
 		}
 		if (!(dwCreationFlags & (DEBUG_PROCESS | DEBUG_ONLY_THIS_PROCESS)) || NtCurrentPeb()->ReadImageFileExecOptions)
 		{
-			if (QueryImageFileKeyFailPresent == TRUE)
+			if (AlreadyQueryImageFileDebugger == TRUE)
 			{
-				QueryImageFileKeyFailPresent = FALSE;
-				CreateInfo.InitState.u1.s1.IFEOSkipDebugger = TRUE;//0x04
+				AlreadyQueryImageFileDebugger = FALSE;
+				CreateInfo.InitState.u1.s1.IFEOSkipDebugger = TRUE;			//0x04
 			}
 		}
 		else
-		{
-			CreateInfo.InitState.u1.s1.IFEOSkipDebugger = CreateInfo.InitState.u1.s1.IFEODoNotPropagateKeyState = TRUE;//0x0c
+		{	
+			CreateInfo.InitState.u1.s1.IFEOSkipDebugger = TRUE;				//0x04
+			CreateInfo.InitState.u1.s1.IFEODoNotPropagateKeyState = TRUE;	//0x08 -> 0x0c
 		}
 		CreateInfo.InitState.u1.s1.WriteOutputOnExit = TRUE;
 		CreateInfo.InitState.u1.s1.ProhibitedImageCharacteristics = IMAGE_FILE_DLL;
@@ -1167,7 +1214,7 @@ BOOL WINAPI CreateProcessInternalW(
 		{
 			BasepQueryModuleChpeSettings(// Compiled Hybrid Portable Executable
 				&ChpeModSettingsOut,
-				32i64,
+				32,
 				Win32PathName.Buffer,
 				&ModuleName, //PUNICODE_STRING
 				lpEnvironment,
@@ -1192,6 +1239,7 @@ BOOL WINAPI CreateProcessInternalW(
 				LODWORD(v182) = 27;
 				BasepAddToOrUpdateAttributesList(&AttributeListTemp, AttributeListTempCount, &AttributeList, &AttributeListCount);
 			}
+			......
 		}*/
 
 		//DEBUG
@@ -1216,6 +1264,7 @@ BOOL WINAPI CreateProcessInternalW(
 			ProcessFlags | (AppXPackageBreakaway ? PROCESS_CREATE_FLAGS_PACKAGE_BREAKAWAY : 0),
 			&ConsoleHandleInfo, 
 			ParentProcessHandle);//14
+
 		//ProcessParameters->ConsoleHandle = 0;
 		/*
 		wprintf(L"[*] MaximumLength: 0x%08lx --- Length: 0x%08lx\n", ProcessParameters->MaximumLength, ProcessParameters->Length);
@@ -1236,7 +1285,6 @@ BOOL WINAPI CreateProcessInternalW(
 		wprintf(L"[*] ProcessGroupId: %d\n", ProcessParameters->ProcessGroupId);
 		*/
 
-		// PackageClaims.Origin = (ULONG_PTR)ProcessParameters; Stack Spoof,
 		if (!ProcessParameters)
 		{
 			bStatus = FALSE;
@@ -1264,7 +1312,7 @@ BOOL WINAPI CreateProcessInternalW(
 		AttributeList.Attributes[AttributeListCount].Attribute = PS_ATTRIBUTE_CHPE;
 		AttributeList.Attributes[AttributeListCount].Size = sizeof(BOOLEAN);
 		AttributeList.Attributes[AttributeListCount].ReturnLength = NULL;
-		//AttributeList.Attributes[AttributeListCount].ValuePtr = QueryChpeConfiguration(&NtImageName, (ChpeModSetting.Reversed3 >> 6) & 1);
+		//AttributeList.Attributes[AttributeListCount].ValuePtr = QueryChpeConfiguration(&NtImageName, (ChpeModSetting.Reserved3 >> 6) & 1);
 		ChpeOption = TRUE;
 		AttributeList.Attributes[AttributeListCount].Value = ChpeOption;
 		AttributeListCount++;
@@ -1274,7 +1322,21 @@ BOOL WINAPI CreateProcessInternalW(
 		AttributeList.TotalLength = AttributeListCount * sizeof(PS_ATTRIBUTE) + sizeof(SIZE_T);
 
 		// win 11 ExtendedPackagedAppContext and......
-		if (AppExecutionAliasInfo && AppExecutionAliasInfo->BreakawayModeLaunch != TRUE)
+		if (lpExtendedPackagedAppContext && lpExtendedPackagedAppContext->Breakaway != TRUE)
+		{
+			if (NtCurrentTeb()->IsImpersonating)
+			{
+				Status = NtOpenThreadToken(NtCurrentThread(), TOKEN_QUERY | TOKEN_IMPERSONATE, TRUE, &SaveImpersonateTokenHandle);
+				if (Status < 0)
+				{
+					BaseSetLastNTError(Status);
+					bStatus = FALSE;
+					goto Leave_Cleanup;
+				}
+			}
+			AppXPackageImpersonateToken = lpExtendedPackagedAppContext->PresentActivationTokenInfo.ActivationTokenHandle;
+		}
+		else if (AppExecutionAliasInfo && AppExecutionAliasInfo->BreakawayModeLaunch != TRUE)
 		{
 			wprintf(L"[*] AppExecutionAlias Impersonating!\n");
 			if (NtCurrentTeb()->IsImpersonating)
@@ -1287,8 +1349,11 @@ BOOL WINAPI CreateProcessInternalW(
 					goto Leave_Cleanup;
 				}
 			}
-			
-			if (!ImpersonateLoggedOnUser(AppExecutionAliasInfo->TokenHandle))
+			AppXPackageImpersonateToken = AppExecutionAliasInfo->TokenHandle;
+		}
+		if (AppXPackageImpersonateToken)
+		{
+			if (!ImpersonateLoggedOnUser(AppXPackageImpersonateToken))
 			{
 				if (SaveImpersonateTokenHandle)
 					NtClose(SaveImpersonateTokenHandle);
@@ -1296,16 +1361,17 @@ BOOL WINAPI CreateProcessInternalW(
 				goto Leave_Cleanup;
 			}
 			ThreadTokenImpersonated = TRUE;
-			//ProcessParameters = (PRTL_USER_PROCESS_PARAMETERS)PackageClaims.Origin; Spoof
 			CurrentTokenHandle = TokenHandle;
 		}
+		
+
 		//wprintf(L"[*] dwCreationFlags: 0x%08x\n", dwCreationFlags);
 		//wprintf(L"[*] InitFlags 0x%08lx, AdditionalFileAccess: 0x%08lx\n", CreateInfo.InitState.u1.InitFlags, CreateInfo.InitState.AdditionalFileAccess);
 		wprintf(L"[*] ProcessFlags: 0x%08lx\n", ProcessFlags);
 		wprintf(L"[*] AttributeListCount: %ld, TotalLength: %lld\n", AttributeListCount, AttributeList.TotalLength);
 
 		Status = NtCreateUserProcess(&ProcessHandle, &ThreadHandle, MAXIMUM_ALLOWED, MAXIMUM_ALLOWED, ProcessObjectAttributes, ThreadObjectAttributes, ProcessFlags, THREAD_CREATE_FLAGS_CREATE_SUSPENDED, ProcessParameters, &CreateInfo, &AttributeList);
-		if (ThreadTokenImpersonated)
+		if (ThreadTokenImpersonated == TRUE)
 		{
 			ThreadTokenImpersonated = FALSE;
 			if (SaveImpersonateTokenHandle)
@@ -1339,6 +1405,7 @@ BOOL WINAPI CreateProcessInternalW(
 		ThreadHandle = NULL;
 		wprintf(L"[-] NtCreateUserProcess Fail: 0x%08lx, CreateInfo.State = %d\n", Status, CreateInfo.State);
 		//wprintf(L"[-] OutputFlags: 0x%08x\n", CreateInfo.SuccessState.u2.OutputFlags);
+
 		switch (CreateInfo.State)
 		{
 
@@ -1347,110 +1414,160 @@ BOOL WINAPI CreateProcessInternalW(
 			bStatus = FALSE;
 			goto Leave_Cleanup;
 			break;
-		case PsCreateFailOnFileOpen:// STATUS_IO_REPARSE_TAG_NOT_HANDLED -> AppX
-			if (AppExecutionAliasInfo || Status != STATUS_IO_REPARSE_TAG_NOT_HANDLED && Status != STATUS_ACCESS_DENIED)
-				goto AppAliasError;
-			AliasStatus = STATUS_NOT_IMPLEMENTED;//win 11
-			if (Status == STATUS_ACCESS_DENIED)
+
+		case PsCreateFailOnFileOpen:
+			if (OSBuildNumber >= 21332 && !AlreadyGetPackagedAppInfo && IsBasepGetPackagedAppInfoForFilePresent())
 			{
-				//Win 11 LoadAppExecutionAliasInfoForExecutable
-				AccessDenied = TRUE;
-				if (IsGetAppExecutionAliasPathPresent())
+				NTSTATUS PackagedAppStatus = BasepGetPackagedAppInfoForFile(lpApplicationName, CurrentTokenHandle, TRUE, &lpExtendedPackagedAppContext);
+				AlreadyGetPackagedAppInfo = TRUE;
+				if (NT_SUCCESS(PackagedAppStatus) && lpExtendedPackagedAppContext)
 				{
-					DWORD Heapsize = 0;
-					AliasStatus = GetAppExecutionAliasPath(Win32ImagePath.Buffer, AppAliasTokenHandle, 0, &Heapsize);
-					if (WIN32_FROM_HRESULT(AliasStatus) == ERROR_INSUFFICIENT_BUFFER)//?
+					wprintf(L"[%d] %ls: BasepGetPackagedAppInfoForFile Fail: %ls\n", CreateInfo.State, L"PsCreateFailOnFileOpen", lpExtendedPackagedAppContext->ApplicationUserModelId);
+					lpApplicationName = lpExtendedPackagedAppContext->PackageImagePath;
+					if (lpExtendedPackagedAppContext->Breakaway == TRUE)
 					{
-						AppExecutionAliasPathHeap = (PWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(WCHAR) * Heapsize);
-						AliasPathHeap = AppExecutionAliasPathHeap;
-						AliasStatus = GetAppExecutionAliasPath(Win32ImagePath.Buffer, AppAliasTokenHandle, AppExecutionAliasPathHeap, &Heapsize);
-						AliasStatus |= AliasStatus ? 0xC0070000 : 0;
+						if (lpExtendedPackagedAppContext->IsAppExecutionAliasType)
+						{
+							PackageCommandLineLength = (sizeof(WCHAR) * (wcslen(lpCommandLine) + wcslen(lpExtendedPackagedAppContext->ApplicationUserModelId)) + sizeof(UNICODE_NULL)+ 2);
+							PackageNewCommandLine = (PWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, PackageCommandLineLength);
+							if (!PackageNewCommandLine)//???
+								break;
+							StringCbCopyW(PackageNewCommandLine, PackageCommandLineLength, lpExtendedPackagedAppContext->ApplicationUserModelId);
+							PackageCommandLineLink = L" ";
+						}
+						else
+						{
+							PackageCommandLineLength = (sizeof(WCHAR) * (wcslen(lpCommandLine) + wcslen(lpExtendedPackagedAppContext->ApplicationUserModelId) + wcslen(L" PackagedDataInfo: ")) + 2);
+							PackageNewCommandLine = (PWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, PackageCommandLineLength);
+							if (!PackageNewCommandLine)//???
+								break;
+							StringCbCopyW(PackageNewCommandLine, PackageCommandLineLength, lpExtendedPackagedAppContext->ApplicationUserModelId);
+							PackageCommandLineLink = L" PackagedDataInfo: ";
+						}
+						StringCbCatW(PackageNewCommandLine, PackageCommandLineLength, PackageCommandLineLink);
+						StringCbCatW(PackageNewCommandLine, PackageCommandLineLength, lpCommandLine);
 					}
-					else if (AliasStatus)
+					else
 					{
-						AliasStatus |= 0xC0070000;
+						AppXPackageBreakaway = FALSE;
+						CurrentTokenHandle = lpExtendedPackagedAppContext->ActivationTokenInfo.ActivationTokenHandle;
+						RtlInitUnicodeString(&PackageFullName, lpExtendedPackagedAppContext->PackageFullName);
+
+						PackageCommandLineLength = 2 * wcslen(lpCommandLine) + 2;
+						PackageNewCommandLine = (PWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, PackageCommandLineLength);
+						if (!PackageNewCommandLine)//???
+							break;
+						StringCbCopyExW(PackageNewCommandLine, PackageCommandLineLength, lpCommandLine, NULL, NULL, STRSAFE_IGNORE_NULLS | STRSAFE_NULL_ON_FAILURE);
 					}
+					lpCommandLine = PackageNewCommandLine;
+					break;
+				}
+				
+				wprintf(L"[%d] %ls: BasepGetPackagedAppInfoForFile Fail: 0x%08lx\n", CreateInfo.State, L"PsCreateFailOnFileOpen", PackagedAppStatus);
+			}
+
+			if (!AppExecutionAliasInfo && (Status == STATUS_IO_REPARSE_TAG_NOT_HANDLED || Status == STATUS_ACCESS_DENIED))
+			{
+				AliasStatus = STATUS_NOT_IMPLEMENTED;// TEST
+				if (Status == STATUS_ACCESS_DENIED)
+				{
+					
+					AliasStatus = LoadAppExecutionAliasInfoForExecutable(
+						NULL,
+						Win32ImagePath.Buffer,
+						AppAliasTokenHandle,
+						RtlProcessHeap(),
+						&AppExecutionAliasInfo);
+					
+					//wprintf(L"[*] ValidateAppXAliasFallback Address: 0x%p\n", ValidateAppXAliasFallback);
+					if (NT_SUCCESS(AliasStatus) && AppExecutionAliasInfo)
+					{
+						AliasStatus = ValidateAppXAliasFallback(Win32ImagePath.Buffer, AppExecutionAliasInfo);
+					}
+
+				}
+				else if (IsLoadAppExecutionAliasInfoExPresent())
+				{
+
+					//
+					// STATUS_IO_REPARSE_TAG_NOT_HANDLED -> AppX
+					//
+					AliasStatus = LoadAppExecutionAliasInfoEx(Win32ImagePath.Buffer, TokenHandle, &AppExecutionAliasInfo);//Alias Core 关键核心
+					wprintf(L"[%d] %ls: LoadAppExecutionAliasInfoEx: 0x%08lx\n", CreateInfo.State, L"PsCreateFailOnFileOpen", AliasStatus);
 				}
 				else
 				{
-					AppExecutionAliasPathHeap = Win32ImagePath.Buffer;
+					AliasStatus = STATUS_NOT_IMPLEMENTED;
 				}
-			}
-			else if (IsLoadAppExecutionAliasInfoExPresent())
-			{
-				AccessDenied = FALSE;
-				AppExecutionAliasPathHeap = Win32ImagePath.Buffer;
-				AliasStatus = STATUS_SUCCESS;//compatibility
-			}
 
-			if (NT_SUCCESS(AliasStatus))
-			{
-				AliasStatus = LoadAppExecutionAliasInfoEx(AppExecutionAliasPathHeap, TokenHandle, &AppExecutionAliasInfo);//Alias Core 关键核心
-				wprintf(L"[*] LoadAppExecutionAliasInfoEx: 0x%08lx\n", AliasStatus);
-			}
-			//wprintf(L"[*] ValidateAppXAliasFallback Address: 0x%p\n", ValidateAppXAliasFallback);
-			if (AccessDenied && NT_SUCCESS(AliasStatus) && AppExecutionAliasInfo)
-			{
-				wprintf(L"[-] AppXAliasFallback, Let's validate it\n");
-				AliasStatus = ValidateAppXAliasFallback(Win32ImagePath.Buffer, AppExecutionAliasInfo);
-			}
-
-			if (!NT_SUCCESS(AliasStatus) || !AppExecutionAliasInfo)//...
-			{
-				if (AliasStatus == 0xC0073D00)
-					Status = 0xC0073D00;
-			AppAliasError:
-				if (!RtlIsDosDeviceName_U(lpApplicationName))
+				if (NT_SUCCESS(AliasStatus) && AppExecutionAliasInfo)
 				{
-					BaseSetLastNTError(Status);
+					lpApplicationName = AppExecutionAliasInfo->AppAliasBaseImagePath;
+					TokenHandle = AppExecutionAliasInfo->TokenHandle;
+
+					// Win 11 BuildAppExecutionAliasCommandLine
+					if (AppExecutionAliasInfo->BreakawayModeLaunch == TRUE)
+					{
+						wprintf(L"[%d] %ls: AppXCommandline Breakaway 1\n", CreateInfo.State, L"PsCreateFailOnFileOpen"); //SystemUWPLauncher.exe
+						SIZE_T AppXCommandlineLength = sizeof(WCHAR) * (wcslen(AppExecutionAliasInfo->PackageFamilyName) + wcslen(lpCommandLine) + 2);
+						AppXCommandline = (wchar_t*)RtlAllocateHeap(RtlProcessHeap(), 0, AppXCommandlineLength);
+						if (AppXCommandline)
+						{
+							StringCbCopyW(AppXCommandline, AppXCommandlineLength, AppExecutionAliasInfo->PackageFamilyName);
+							StringCbCatW(AppXCommandline, AppXCommandlineLength, L" ");
+							StringCbCatW(AppXCommandline, AppXCommandlineLength, lpCommandLine);
+						}
+					}
+					else
+					{
+						wprintf(L"[%d] %ls: AppXCommandline Normal 2\n", CreateInfo.State, L"PsCreateFailOnFileOpen");
+						RtlInitUnicodeString(&PackageFullName, AppExecutionAliasInfo->AppXPackageName);//Win 11 Keep
+						AppXPackageBreakaway = FALSE;
+						SIZE_T AppXCommandlineLength = sizeof(WCHAR) * wcslen(lpCommandLine) + 2;
+						AppXCommandline = (LPWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, AppXCommandlineLength);
+						if (AppXCommandline)
+						{
+							StringCbCopyExW(AppXCommandline, AppXCommandlineLength, lpCommandLine, 0, 0, 0);
+
+						}
+						wprintf(L"[%d] %ls: PackageFullName: %ls\n", CreateInfo.State, L"PsCreateFailOnFileOpen", PackageFullName.Buffer);
+					}
+					if(AppXCommandline)
+						lpCommandLine = AppXCommandline;
+
+					//
+					// New: AppExecutionAliasInfo BnoIsolation Name 10.0.26020.1000
+					//
+					if (OSBuildNumber >= 25357 && AppExecutionAliasInfo->AliasPackagesIsolationPrefix)
+					{
+						BasepFreeBnoIsolationParameter(&BnoIsolation);
+						RtlInitUnicodeString(&BnoIsolation.IsolationPrefix, AppExecutionAliasInfo->AliasPackagesIsolationPrefix);
+						BnoIsolation.IsolationEnabled = TRUE;
+						AppXPackageBnoIsolationDetected = TRUE;
+					}
+
+					break;// OK
 				}
-				else
+				else if (AliasStatus == (ERROR_PACKAGE_UPDATING | 0xC0070000))
 				{
-					RtlSetLastWin32Error(ERROR_BAD_DEVICE);
+					Status = ERROR_PACKAGE_UPDATING | 0xC0070000;
 				}
-				bStatus = FALSE;
-				goto Leave_Cleanup;
 			}
-
-			lpApplicationName = AppExecutionAliasInfo->AppAliasBaseImagePath;
-			TokenHandle = AppExecutionAliasInfo->TokenHandle;
-
-			//Win 11 BuildAppExecutionAliasCommandLine
-			if (AppExecutionAliasInfo->BreakawayModeLaunch == TRUE)
+		
+			if (RtlIsDosDeviceName_U(lpApplicationName))
 			{
-				wprintf(L"[*] AppXCommandline Breakaway 1\n"); //SystemUWPLauncher.exe
-				SIZE_T AppXCommandlineLength = sizeof(WCHAR) * (wcslen(AppExecutionAliasInfo->BreakawayCommandeLine) + wcslen(lpCommandLine) + 2);
-				AppXCommandline = (wchar_t*)RtlAllocateHeap(RtlProcessHeap(), 0, AppXCommandlineLength);
-				if (AppXCommandline)
-				{
-					StringCbCopyW(AppXCommandline, AppXCommandlineLength, AppExecutionAliasInfo->BreakawayCommandeLine);
-					StringCbCatW(AppXCommandline, AppXCommandlineLength, L" ");
-					StringCbCatW(AppXCommandline, AppXCommandlineLength, lpCommandLine);
-				}
+				RtlSetLastWin32Error(ERROR_BAD_DEVICE);
 			}
 			else
 			{
-				wprintf(L"[*] AppXCommandline Normal 2\n");
-				RtlInitUnicodeString(&PackageFullName, AppExecutionAliasInfo->AppXPackageName);//Win 11 Keep
-				AppXPackageBreakaway = FALSE;
-				SIZE_T AppXCommandlineLength = sizeof(WCHAR) * wcslen(lpCommandLine) + 2;
-				AppXCommandline = (LPWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, AppXCommandlineLength);
-				if (AppXCommandline)
-				{
-					StringCbCopyExW(AppXCommandline, AppXCommandlineLength, lpCommandLine, 0, 0, 0);
-
-				}
-				wprintf(L"[+] PackageFullName: %ls\n", PackageFullName.Buffer);
+				BaseSetLastNTError(Status);
 			}
-			lpCommandLine = AppXCommandline;
-			//wprintf(L"[+] Struct AppExecutionAliasInfo Located in: 0x%p\n", AppExecutionAliasInfo);
-			//wprintf(L"[*] AppExecutionAlias Name: %ls\n", lpApplicationName);
-			//wprintf(L"[*] Final TokenHandle: 0x%08llx\n", TokenHandle);
-			//wprintf(L"[+] Final lpCommandLine for AppX: %ls\n", lpCommandLine);
-			break;
+			bStatus = FALSE;
+			goto Leave_Cleanup;
+
 		case PsCreateFailOnSectionCreate:
 			FileHandle = CreateInfo.FailSection.FileHandle;
-			NtVdm64CreateProcessInternalW = (NtVdm64CreateProcessInternalW_)GetProcAddress(LoadLibraryW(L"ntvdm64.dll"), "NtVdm64CreateProcessInternalW");
+
 			if (Status == STATUS_ACCESS_DENIED)
 			{
 				RtlSetLastWin32Error(ERROR_ACCESS_DENIED);
@@ -1488,16 +1605,17 @@ BOOL WINAPI CreateProcessInternalW(
 					}
 					if (!EnvLength)
 					{
-						if (GetEnvironmentVariableW(L"SystemRoot", NewCommandLine, MAX_PATH - 17) > MAX_PATH - 18) //   wcslen("\\system32\\cmd.exe")
+						
+						if (GetEnvironmentVariableW(L"SystemRoot", NewCommandLine, MAX_PATH - DefaultComSpecPathStringCount) > MAX_PATH - DefaultComSpecPathStringCount - 1) // wcslen("\\system32\\cmd.exe")
 						{
 							BaseSetLastNTError(STATUS_NOT_A_DIRECTORY);
 							bStatus = FALSE;
 							goto Leave_Cleanup;
 						}
-						StringCbCatW(NewCommandLine, MAX_PATH, L"\\system32\\cmd.exe");// RtlStringCchCatW ?= StringCbCatW
+						StringCbCatW(NewCommandLine, MAX_PATH, DefaultComSpecPath);// RtlStringCchCatW ?= StringCbCatW
 					}
 					StringCbCatW(NewCommandLine, MAX_PATH + 3, L" /c");// RtlStringCchCatW ?= StringCbCatW
-					//SearchRetry = 1 ???
+
 					if (!BuildSubSysCommandLine(SearchRetry, NewCommandLine, NULL, lpCommandLine, &SubSysCommandLine))
 					{
 						bStatus = FALSE;
@@ -1509,6 +1627,7 @@ BOOL WINAPI CreateProcessInternalW(
 					break;
 				}
 			}
+
 			if ((dwCreationFlags & CREATE_PRESERVE_CODE_AUTHZ_LEVEL) == 0)
 			{
 				bSaferChecksNeeded = TRUE;
@@ -1545,9 +1664,11 @@ BOOL WINAPI CreateProcessInternalW(
 						goto Leave_Cleanup;
 					}
 				}
-			}
+			}//dwCreationFlags & CREATE_PRESERVE_CODE_AUTHZ_LEVEL
+
 			if (Status == STATUS_INVALID_IMAGE_WIN_16)
 			{
+				init2();
 				if (IsNtVdm64CreateProcessInternalWPresent())
 				{
 					bStatus = NtVdm64CreateProcessInternalW(
@@ -1607,11 +1728,13 @@ BOOL WINAPI CreateProcessInternalW(
 			}
 			IsImageValidFixed = TRUE;
 			break;
+
 		case PsCreateFailExeFormat:
 			RtlSetLastWin32Error(ERROR_BAD_EXE_FORMAT);
 			bStatus = FALSE;
 			goto Leave_Cleanup;
 			break;
+
 		case PsCreateFailMachineMismatch:
 			if (TargetProcessMachine != IMAGE_FILE_MACHINE_ARM64)
 			{
@@ -1632,6 +1755,7 @@ BOOL WINAPI CreateProcessInternalW(
 			bStatus = FALSE;
 			goto Leave_Cleanup;
 			break;
+
 		case PsCreateFailExeName:
 			IFEOKey = CreateInfo.ExeName.IFEOKey;
 			if (!ImageFileDebuggerCommand)
@@ -1653,7 +1777,8 @@ BOOL WINAPI CreateProcessInternalW(
 				ReturnedLength = 0;
 			if (NT_SUCCESS(Status) && ReturnedLength >= 2 && *ImageFileDebuggerCommand)
 			{
-				*(ImageFileDebuggerCommand + sizeof(WCHAR) * MAX_PATH) = NULL;
+		
+				ImageFileDebuggerCommand[MAX_PATH] = NULL;
 				if (!BuildSubSysCommandLine(3, ImageFileDebuggerCommand, 0, lpCommandLine, &SubSysCommandLine))
 				{
 					bStatus = FALSE;
@@ -1670,63 +1795,71 @@ BOOL WINAPI CreateProcessInternalW(
 			}
 			if (!AppExecutionAliasInfo && OSBuildNumber >= 21313)
 			{
+				//
+				// https://docs.microsoft.com/en-us/windows/apps/desktop/modernize/desktop-to-uwp-extensions
+				//
+				wprintf(L"[%d] %ls: Try to Redirect Package Executable via OSBuildNumber >= 21313\n", CreateInfo.State, L"PsCreateFailExeName");
+				Status = LoadAppExecutionAliasInfoForExecutable(IFEOKey, Win32ImagePath.Buffer, CurrentTokenHandle, RtlProcessHeap(), &AppExecutionAliasInfo);
 
-				wprintf(L"[!] Try to Redirect Package Executable via OSBuildNumber >= 21313\n");
-				/* https://docs.microsoft.com/en-us/windows/apps/desktop/modernize/desktop-to-uwp-extensions */
-				AppAliasRedirect = FALSE;
-				Status = LdrQueryImageFileKeyOption(IFEOKey, L"AppExecutionAliasRedirect", REG_DWORD, (LPCWSTR)&AppAliasRedirect, sizeof(BOOL), NULL);
-				if (NT_SUCCESS(Status) && AppAliasRedirect == TRUE)
+				if (NT_SUCCESS(Status) && AppExecutionAliasInfo)
 				{
-					Status = LoadAppExecutionAliasInfoForExecutable(Win32ImagePath.Buffer, CurrentTokenHandle, RtlProcessHeap(), &AppExecutionAliasInfo);
-					ExtendedAppExecutionAliasInfo_New* AppExecutionAliasInfoNew = (ExtendedAppExecutionAliasInfo_New*)AppExecutionAliasInfo;//QAQ
-					if (NT_SUCCESS(Status) && AppExecutionAliasInfoNew)
+					lpApplicationName = AppExecutionAliasInfo->AppAliasBaseImagePath;
+					TokenHandle = AppExecutionAliasInfo->TokenHandle;
+
+					//
+					// BuildAppExecutionAliasCommandLine and...
+					//
+					if (AppExecutionAliasInfo->BreakawayModeLaunch == TRUE)
 					{
-						Status = ValidateAppExecutionAliasRedirectPackageIdentity(IFEOKey, AppExecutionAliasInfoNew);
-					}
-					else if (Status == 0xC0073D00)
-					{
-						NtClose(IFEOKey);
-						bStatus = FALSE;
-						goto Leave_Cleanup;
-					}
-					if (NT_SUCCESS(Status))
-					{
-						lpApplicationName = AppExecutionAliasInfo->AppAliasBaseImagePath;
-						TokenHandle = AppExecutionAliasInfo->TokenHandle;
-						if (AppExecutionAliasInfo->BreakawayModeLaunch == TRUE)
-						{
-							wprintf(L"[*] AppXCommandline Breakaway 1\n"); //SystemUWPLauncher.exe
-							SIZE_T AppXCommandlineLength = sizeof(WCHAR) * (wcslen(AppExecutionAliasInfo->BreakawayCommandeLine) + wcslen(lpCommandLine) + 2);
-							AppXCommandline = (wchar_t*)RtlAllocateHeap(RtlProcessHeap(), 0, AppXCommandlineLength);
-							if (AppXCommandline)
-							{
-								StringCbCopyW(AppXCommandline, AppXCommandlineLength, AppExecutionAliasInfo->BreakawayCommandeLine);
-								StringCbCatW(AppXCommandline, AppXCommandlineLength, L" ");
-								StringCbCatW(AppXCommandline, AppXCommandlineLength, lpCommandLine);
-							}
-						}
-						else
-						{
-							wprintf(L"[*] AppXCommandline Normal 2\n");
-							RtlInitUnicodeString(&PackageFullName, AppExecutionAliasInfo->AppXPackageName);//Win 11 Keep
-							AppXPackageBreakaway = FALSE;
-							SIZE_T AppXCommandlineLength = sizeof(WCHAR) * wcslen(lpCommandLine) + 2;
-							AppXCommandline = (LPWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, AppXCommandlineLength);
-							if (AppXCommandline)
-							{
-								StringCbCopyExW(AppXCommandline, AppXCommandlineLength, lpCommandLine, 0, 0, 0);
-							}
-							wprintf(L"[+] PackageFullName: %ls\n", PackageFullName.Buffer);
-						}
+						wprintf(L"[%d] %ls: AppXCommandline Breakaway 1\n", CreateInfo.State, L"PsCreateFailExeName"); //SystemUWPLauncher.exe
+						SIZE_T AppXCommandlineLength = sizeof(WCHAR) * (wcslen(AppExecutionAliasInfo->PackageFamilyName) + wcslen(lpCommandLine) + 2);
+						AppXCommandline = (wchar_t*)RtlAllocateHeap(RtlProcessHeap(), 0, AppXCommandlineLength);
 						if (AppXCommandline)
-							lpCommandLine = AppXCommandline;
+						{
+							StringCbCopyW(AppXCommandline, AppXCommandlineLength, AppExecutionAliasInfo->PackageFamilyName);
+							StringCbCatW(AppXCommandline, AppXCommandlineLength, L" ");
+							StringCbCatW(AppXCommandline, AppXCommandlineLength, lpCommandLine);
+						}
 					}
+					else
+					{
+						wprintf(L"[%d] %ls: AppXCommandline Normal 2\n", CreateInfo.State, L"PsCreateFailExeName");
+						RtlInitUnicodeString(&PackageFullName, AppExecutionAliasInfo->AppXPackageName);//Win 11 Keep
+						AppXPackageBreakaway = FALSE;
+						SIZE_T AppXCommandlineLength = sizeof(WCHAR) * wcslen(lpCommandLine) + 2;
+						AppXCommandline = (LPWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, AppXCommandlineLength);
+						if (AppXCommandline)
+						{
+							StringCbCopyExW(AppXCommandline, AppXCommandlineLength, lpCommandLine, 0, 0, 0);
+						}
+						wprintf(L"[%d] %ls: PackageFullName: %ls\n", CreateInfo.State, L"PsCreateFailExeName", PackageFullName.Buffer);
+					}
+					if (AppXCommandline)
+						lpCommandLine = AppXCommandline;
+
+					//
+					// New: AppExecutionAliasInfo BnoIsolation Name
+					//
+					if (OSBuildNumber >= 25357 && AppExecutionAliasInfo->AliasPackagesIsolationPrefix)
+					{
+						BasepFreeBnoIsolationParameter(&BnoIsolation);
+						RtlInitUnicodeString(&BnoIsolation.IsolationPrefix, AppExecutionAliasInfo->AliasPackagesIsolationPrefix);
+						BnoIsolation.IsolationEnabled = TRUE;
+						AppXPackageBnoIsolationDetected = TRUE;
+					}
+				}
+				else if (Status == (ERROR_PACKAGE_UPDATING | 0xC0070000))
+				{
+					NtClose(IFEOKey);
+					bStatus = FALSE;
+					goto Leave_Cleanup;
 				}
 			}
 			if (OSBuildNumber >= 21313)
 				NtClose(IFEOKey);
-			QueryImageFileKeyFailPresent = TRUE;
+			AlreadyQueryImageFileDebugger = TRUE;
 			break;
+
 		default:
 			break;
 	}
@@ -1821,29 +1954,29 @@ BOOL WINAPI CreateProcessInternalW(
 	memset(&BaseCreateProcessMessage->Sxs, 0, sizeof(BaseCreateProcessMessage->Sxs));
 	switch (SectionImageInfomation.Machine)
 	{
-	case IMAGE_FILE_MACHINE_I386:
-		// If this is a .NET ILONLY that needs to run in a 64-bit addressspace, then let SXS be aware of this
-		if (CreateInfo.SuccessState.u2.s2.AddressSpaceOverride)
-			ImageProcessorArchitecture = SharedUserData->NativeProcessorArchitecture;
-		else
+		case IMAGE_FILE_MACHINE_I386:
+			// If this is a .NET ILONLY that needs to run in a 64-bit addressspace, then let SXS be aware of this
+			if (CreateInfo.SuccessState.u2.s2.AddressSpaceOverride)
+				ImageProcessorArchitecture = SharedUserData->NativeProcessorArchitecture;
+			else
+				ImageProcessorArchitecture = PROCESSOR_ARCHITECTURE_IA32_ON_WIN64;
+			break;
+		case IMAGE_FILE_MACHINE_ARMNT:
+			ImageProcessorArchitecture = PROCESSOR_ARCHITECTURE_ARM;
+			break;
+		case IMAGE_FILE_MACHINE_HYBRID_X86:
 			ImageProcessorArchitecture = PROCESSOR_ARCHITECTURE_IA32_ON_WIN64;
-		break;
-	case IMAGE_FILE_MACHINE_ARMNT:
-		ImageProcessorArchitecture = PROCESSOR_ARCHITECTURE_ARM;
-		break;
-	case IMAGE_FILE_MACHINE_HYBRID_X86:
-		ImageProcessorArchitecture = PROCESSOR_ARCHITECTURE_IA32_ON_WIN64;
-		break;
-	case IMAGE_FILE_MACHINE_AMD64:
-		ImageProcessorArchitecture = PROCESSOR_ARCHITECTURE_AMD64;
-		break;
-	case IMAGE_FILE_MACHINE_ARM64:
-		ImageProcessorArchitecture = PROCESSOR_ARCHITECTURE_ARM64;
-		break;
-	default:
-		wprintf(L"[*] Kernel32: No mapping for ImageInformation.Machine == %04x\n", SectionImageInfomation.Machine);//DbgPrint_0
-		ImageProcessorArchitecture = PROCESSOR_ARCHITECTURE_UNKNOWN;
-		break;
+			break;
+		case IMAGE_FILE_MACHINE_AMD64:
+			ImageProcessorArchitecture = PROCESSOR_ARCHITECTURE_AMD64;
+			break;
+		case IMAGE_FILE_MACHINE_ARM64:
+			ImageProcessorArchitecture = PROCESSOR_ARCHITECTURE_ARM64;
+			break;
+		default:
+			wprintf(L"[*] Kernel32: No mapping for ImageInformation.Machine == %04x\n", SectionImageInfomation.Machine);//DbgPrint_0
+			ImageProcessorArchitecture = PROCESSOR_ARCHITECTURE_UNKNOWN;
+			break;
 	}
 	if (dwCreationFlags & CREATE_SECURE_PROCESS)
 		goto ThreadResumePre;
@@ -1883,14 +2016,10 @@ BOOL WINAPI CreateProcessInternalW(
 			&dwInstallerFlags,
 			&AppCompatImageMachine,
 			&MaxVersionTested,
-			&DeviceFamilyID				
+			&DeviceFamilyID
 		);
-		// win 11 26016 insider 26016/25019?
-		if (!(ProcessFlags & PROCESS_CREATE_FLAGS_IMAGE_EXPANSION_MITIGATION_DISABLE) && dwLuaRunlevelFlags.LuaFlags.NoImageExpansion)
-		{
-			ProcessFlags |= PROCESS_CREATE_FLAGS_IMAGE_EXPANSION_MITIGATION_DISABLE;
-		}
 
+		//
 		// PackageOnly DEVICEFAMILYINFOENUM_DESKTOP = 3
 		//
 		// AppCompatSxsData: Manifest String Located in AppCompat (ShimDataBase *.sdb -- PDB[TAG_SXS_MANIFEST]）LPWSTR ? LPCSTR 
@@ -1900,15 +2029,20 @@ BOOL WINAPI CreateProcessInternalW(
 		// a NULL terminator at the end of the string. We must provide the
 		// string without the NULL terminator.?
 		//
-
-		wprintf(L"[*] AppCompatSxsData = 0x%p, AppCompatSxsDataSize = %ld\n", AppCompatSxsData, AppCompatSxsDataSize);
 		// MaxVersionTested = 0x000A | 0000 | 47BA | 0000 == 10.0.18362.0
 		// RunlevelFlags ? dwFusionFlags ? dwInstallerFlags
-		wprintf(L"[*] dwFusionFlags = 0x%lx\n", dwFusionFlags);
-		wprintf(L"[*] dwLuaRunlevelFlags = 0x%08llx\n", dwLuaRunlevelFlags.FixFlag.QuadPart); //APPCOAMPAT_FLAG_LUA
-		wprintf(L"[*] dwInstallerFlags = 0x%lx\n", dwInstallerFlags);
-		wprintf(L"[*] AppCompatImageMachine = 0x%04x\n", AppCompatImageMachine);//IMAGE_FILE_MACHINE_AMD64
-		wprintf(L"[*] DeviceFamilyID = %ld\n", DeviceFamilyID);//DEVICEFAMILYINFOENUM_DESKTOP
+		//
+		wprintf(L"[*] %ls: SdbQueryResult        = 0x%p, SdbQueryResultSize   = %ld\n", BasepQueryAppCompatString, SdbQueryResult, SdbQueryResultSize);
+		wprintf(L"[*] %ls: AppCompatSxsData      = 0x%p, AppCompatSxsDataSize = %ld\n", BasepQueryAppCompatString, AppCompatSxsData, AppCompatSxsDataSize);
+		wprintf(L"[*] %ls: dwFusionFlags         = 0x%lx\n", BasepQueryAppCompatString, dwFusionFlags);
+		wprintf(L"[*] %ls: dwLuaRunlevelFlags    = 0x%08llx\n", BasepQueryAppCompatString, dwLuaRunlevelFlags.FixFlag.QuadPart); //APPCOAMPAT_FLAG_LUA
+		wprintf(L"[*] %ls: dwInstallerFlags      = 0x%lx\n", BasepQueryAppCompatString, dwInstallerFlags);
+		wprintf(L"[*] %ls: AppCompatImageMachine = 0x%04x, DeviceFamilyID = %ld\n", BasepQueryAppCompatString, AppCompatImageMachine, DeviceFamilyID);//IMAGE_FILE_MACHINE_AMD64 DEVICEFAMILYINFOENUM_DESKTOP
+		// win 11 26016 insider 26016/25019?
+		if (!(ProcessFlags & PROCESS_CREATE_FLAGS_IMAGE_EXPANSION_MITIGATION_DISABLE) && dwLuaRunlevelFlags.LuaFlags.NoImageExpansion)
+		{
+			ProcessFlags |= PROCESS_CREATE_FLAGS_IMAGE_EXPANSION_MITIGATION_DISABLE;
+		}
 	}
 	
 	if (!CreateInfo.SuccessState.u2.s2.ProtectedProcess || CreateInfo.SuccessState.u2.s2.ProtectedProcessLight)
@@ -2004,11 +2138,11 @@ BOOL WINAPI CreateProcessInternalW(
 
 	if (StartupInfo.dwFlags & STARTF_FORCEONFEEDBACK)
 		BaseCreateProcessMessage->ProcessHandle = (HANDLE)((ULONG_PTR)BaseCreateProcessMessage->ProcessHandle | BASE_CREATE_PROCESS_MSG_PROCESS_FLAG_FEEDBACK_ON);
+
 	if (StartupInfo.dwFlags & STARTF_FORCEOFFFEEDBACK)
 		BaseCreateProcessMessage->ProcessHandle = (HANDLE)((ULONG_PTR)BaseCreateProcessMessage->ProcessHandle & ~BASE_CREATE_PROCESS_MSG_PROCESS_FLAG_FEEDBACK_ON);
-	// Warning! This define is uncorrected, since it's defined selfishly and privately !!! [STARTF_HOLOLENAPPFASTMODE / STARTF_HOLOLENAPPNOWAIT]
-	// since win 10 19H1/1903 [10.0.18362.1]
-	if (StartupInfo.dwFlags & STARTF_HOLOLENAPPNOWAIT)// [uncorrected]
+
+	if (StartupInfo.dwFlags & STARTF_IGNOREGUIAPP)// [uncorrected] fontdrvhost.exe only?
 		BaseCreateProcessMessage->ProcessHandle = (HANDLE)((ULONG_PTR)BaseCreateProcessMessage->ProcessHandle & ~(BASE_CREATE_PROCESS_MSG_PROCESS_FLAG_FEEDBACK_ON | BASE_CREATE_PROCESS_MSG_PROCESS_FLAG_GUI_WAIT));
 
 	BaseCreateProcessMessage->VdmBinaryType = VdmBinaryType;
@@ -2053,12 +2187,12 @@ BOOL WINAPI CreateProcessInternalW(
 	Status = CsrClientCallServer((PCSR_API_MESSAGE)&ApiMessage, CaptureBuffer, CSR_MAKE_API_NUMBER(BASESRV_SERVERDLL_INDEX, BasepCreateProcess2), sizeof(BASE_CREATEPROCESS_MSG));
 	if (!NT_SUCCESS((NTSTATUS)ApiMessage.Status))
 	{
-		wprintf(L"[-] CsrClientCallServer Fake: 0x%08lx\n", Status);
-		wprintf(L"[-] CsrClientCallServer: 0x%08lx\n", ApiMessage.Status);
+		wprintf(L"[-] CsrClientCallServer: 0x%08lx -- 0x%08lx\n", Status, ApiMessage.Status);
 		BaseSetLastNTError((NTSTATUS)ApiMessage.Status);
 		bStatus = FALSE;
 		goto Leave_Cleanup;
 	}
+
 	wprintf(L"------------------------------------------------------------------\n");
 	BaseCreateProcessMessageOutPut(BaseCreateProcessMessage->Sxs);
 
@@ -2068,7 +2202,7 @@ BOOL WINAPI CreateProcessInternalW(
 		{
 			Status = BasepUpdateProcessParametersField(
 				ProcessHandle,
-				&BaseCreateProcessMessage->Sxs.ProcessParameterFlags,
+				(LPVOID*)&BaseCreateProcessMessage->Sxs.ProcessParameterFlags,
 				sizeof(ULONG),
 				NULL,
 				FIELD_OFFSET(RTL_USER_PROCESS_PARAMETERS, Flags),// 0x8
@@ -2081,9 +2215,10 @@ BOOL WINAPI CreateProcessInternalW(
 				bStatus = FALSE;
 				goto Leave_Cleanup;
 			}
-			wprintf(L"[*] BasepUpdateProcessParametersField: 0x%08lx, Remote ProcessParameterFlags: 0x%08lx\n", Status, BaseCreateProcessMessage->Sxs.ProcessParameterFlags);
+			wprintf(L"[*] Remote ProcessParameterFlags Updated: 0x%08lx -> 0x%08lx\n", CreateInfo.SuccessState.CurrentParameterFlags, BaseCreateProcessMessage->Sxs.ProcessParameterFlags);
 		}
 	}
+
 	if (!IsBatchFile && !(ExtendedFlags & EXTENDED_PROCESS_CREATION_FLAG_FORCELUA) && !SecurityCapabilities)
 	{
 		ElevationFlags |= ELEVATION_FLAG_TOKEN_CHECKS;
@@ -2093,10 +2228,10 @@ BOOL WINAPI CreateProcessInternalW(
 				FileHandle,
 				Win32ImagePath.Buffer,
 				&ElevationFlags,
-				dwLuaRunlevelFlags,//5
+				dwLuaRunlevelFlags,
 				&BaseCreateProcessMessage->Sxs.ActivationContextRunLevel,
 				&BaseCreateProcessMessage->Sxs.AssemblyName,
-				dwInstallerFlags, //a8 dwInstallerFlags
+				dwInstallerFlags,
 				CurrentTokenHandle,
 				NULL,
 				NULL) : STATUS_SUCCESS;
@@ -2115,35 +2250,71 @@ BOOL WINAPI CreateProcessInternalW(
 		}
 	}
 	wprintf(L"[*] ElevationFlags = 0x%08lx\n", ElevationFlags);
-	if (*BaseCreateProcessMessage->Sxs.ApplicationUserModelId && !PackageFullNameSpecified && !AppExecutionAliasInfo && !ActivationToken)
+	if (*BaseCreateProcessMessage->Sxs.ApplicationUserModelId && !PackageNameSpecified && !AppExecutionAliasInfo && !ActivationToken)
 	{
-		wprintf(L"[+] Package Activation!\n");
+
+		// 
+		// kernel32.dll!AicGetPackageActivationTokenForSxS
+		//   rpcrt4.dll!Ndr64AsyncClientCall:   CallRPC->0497B57D-2E66-424f-A0C6-157CD5D41700 [Proc: 3]
+		//  appinfo.dll!RAiGetPackageActivationTokenForSxS
+		//  appinfo.dll!CreateBnoIsolationPrefixForRpc
+		//  appinfo.dll!CreateBnoIsolationPrefix
+		//		GetPackageFamilyNameFromToken(ActivationToken, &packageFamilyNameLength, packageFamilyName)
+		//		PackageSidFromFamilyName(packageFamilyName, &Sid)
+		//		ConvertSidToStringSidW(Sid, BnoIsolationPrefix)
+		//
+		wprintf(L"[+] Package %ls Activation!\n", BaseCreateProcessMessage->Sxs.ApplicationUserModelId);
 		Win32Error = BasepGetPackageActivationTokenForSxS(
 			BaseCreateProcessMessage->Sxs.ApplicationUserModelId,
 			TokenHandle,
-			&ActivationToken
-		);//BnoIsolationPrefix   
-		if (Win32Error != 0)
+			&ActivationToken);
+
+		//
+		// TEST ActivationTokenInfo.BnoIsolationPackageSidString is NOT cleaned correctly yet.
+		//
+		if (Win32Error == ERROR_CALL_NOT_IMPLEMENTED)
+		{
+			Win32Error = BasepGetPackageActivationTokenForSxS2(
+				BaseCreateProcessMessage->Sxs.ApplicationUserModelId,
+				TokenHandle,
+				&ActivationTokenInfo);
+			ActivationToken = ActivationTokenInfo.ActivationTokenHandle;
+		}
+		else
+		{
+			ActivationTokenInfo.ActivationTokenHandle = ActivationToken;
+		}
+		
+		if (Win32Error != ERROR_SUCCESS)
 		{
 			RtlSetLastWin32Error(Win32Error);
 			bStatus = FALSE;
 			goto Leave_Cleanup;
 		}
 		
-		if (ActivationToken)
+		if (ActivationTokenInfo.ActivationTokenHandle)
 		{
-			UINT32 packageFullNameLength = 128;
+			UINT32 packageFullNameLength = PACKAGE_FULL_NAME_MAX_LENGTH + 1;
 			Win32Error = GetPackageFullNameFromToken_(
-				ActivationToken,
+				ActivationTokenInfo.ActivationTokenHandle,
 				&packageFullNameLength,
 				packageFullName);
-			if (Win32Error != 0)
+
+			if (Win32Error != ERROR_SUCCESS)
 			{
+				Status = STATUS_UNSUCCESSFUL;
 				RtlSetLastWin32Error(Win32Error);
 				bStatus = FALSE;
 				goto Leave_Cleanup;
 			}
 			RtlInitUnicodeString(&PackageFullName, packageFullName);
+
+			if (OSBuildNumber >= 25357 && ActivationTokenInfo.PackageBnoIsolationPrefix)
+			{
+				RtlInitUnicodeString(&BnoIsolation.IsolationPrefix, ActivationTokenInfo.PackageBnoIsolationPrefix);
+				BnoIsolation.IsolationEnabled = TRUE;
+				AppXPackageBnoIsolationDetected = TRUE;
+			}
 			goto RetryNtCreateUserProcess;
 		}
 	}
@@ -2189,7 +2360,7 @@ BOOL WINAPI CreateProcessInternalW(
 			PackageFullName.Buffer,
 			&ElevationFlags,//a3
 			&BaseCreateProcessMessage->Sxs.ActivationContextRunLevel,
-			&BaseCreateProcessMessage->Sxs.SxsSupportOSInfo,// UNCORRECTED...
+			&BaseCreateProcessMessage->Sxs.SxsSupportOSInfo,
 			&BaseCreateProcessMessage->Sxs.SxsMaxVersionTested,
 			&SectionImageInfomation,
 			AppCompatImageMachine,
@@ -2200,9 +2371,6 @@ BOOL WINAPI CreateProcessInternalW(
 			&AppCompatData,
 			&AppCompatDataSize);
 		
-		wprintf(L"[*] BasepGetAppCompatData-> SdbQueryResult = 0x%p, SdbQueryResultSize = %ld\n", SdbQueryResult, SdbQueryResultSize);
-		wprintf(L"[*] AppCompatSxsData = 0x%p, AppCompatSxsDataSize = %ld\n", AppCompatSxsData, AppCompatSxsDataSize);
-		//getchar();
 		if (AppCompatData)
 		{
 			
@@ -2240,8 +2408,10 @@ BOOL WINAPI CreateProcessInternalW(
 				bStatus = FALSE;
 				goto Leave_Cleanup;
 			}
-			wprintf(L"[*] AppCompatData: 0x%p, AppCompatDataSize: %ld Written via UserMode.\n", AppCompatData, AppCompatDataSize);
-			wprintf(L"[*] Located in RemoteProcess Peb->pShimData: 0x%p, Data RemotePointer: 0x%p\n", &PebAddressNative->pShimData, pAppCompatDataInNewProcess);
+			wprintf(L"[*] %ls: AppCompatData  = 0x%p, AppCompatDataSize  = %ld Written via UserMode.\n", BasepGetAppCompatDataString, AppCompatData, AppCompatDataSize);
+			wprintf(L"[*] %ls: SdbQueryResult = 0x%p, SdbQueryResultSize = %ld\n", BasepGetAppCompatDataString, SdbQueryResult, SdbQueryResultSize);
+			wprintf(L"[*] Already Located in RemoteProcess Peb->pShimData: 0x%p, Data RemotePointer: 0x%p\n", &PebAddressNative->pShimData, pAppCompatDataInNewProcess);
+			//getchar();
 			if (CreateInfo.SuccessState.PebAddressWow64)
 			{
 				ULONG pAppCompatDataInNewProcessWow64 = PtrToUlong(pAppCompatDataInNewProcess);
@@ -2291,19 +2461,46 @@ BOOL WINAPI CreateProcessInternalW(
 				FIELD_OFFSET(RTL_USER_PROCESS_PARAMETERS, PackageDependencyData), // 0x400
 				FIELD_OFFSET(RTL_USER_PROCESS_PARAMETERS32, PackageDependencyData),// 0x298
 				&CreateInfo);
-			wprintf(L"[*] BasepUpdateProcessParametersField: 0x%08lx, Remote PackageDependencyData: 0x%p\n", Status, AppXProcessContext->RemoteBaseAddress);
+			
 			if (!NT_SUCCESS(Status))
 			{
 				BaseSetLastNTError(Status);
 				bStatus = FALSE;
 				goto Leave_Cleanup;
 			}
+			wprintf(L"[*] Remote PackageDependencyData Updated: 0x%p\n", AppXProcessContext->RemoteBaseAddress);
 		}
-		AppXSuspendRequired = FALSE;
-		if (AppExecutionAliasInfo && (AppExecutionAliasInfo->BreakawayModeLaunch != TRUE))
+		ActivationFlag = FALSE;
+		if(lpExtendedPackagedAppContext)
+		{
+			if (lpExtendedPackagedAppContext->AppType != GeneralUWPApp)
+			{
+				Win32Error = CompletePackagedProcessCreationEx(
+					ProcessHandle,
+					ThreadHandle,
+					lpExtendedPackagedAppContext->AppType == ConsoleUWPApp,
+					lpExtendedPackagedAppContext->AppType == MultipleInstancesUWPApp,
+					lpCurrentDirectory,
+					lpCommandLine,
+					lpExtendedPackagedAppContext->IsAppExecutionAliasType,
+					CurrentTokenHandle,
+					&ActivationFlag);
+
+				if (Win32Error != 0)
+				{
+					RtlSetLastWin32Error(Win32Error);
+					Status = STATUS_UNSUCCESSFUL;
+					bStatus = FALSE;
+					goto Leave_Cleanup;
+				}
+			}
+			
+		}
+		else if (AppExecutionAliasInfo && (AppExecutionAliasInfo->BreakawayModeLaunch != TRUE))
 		{
 			// ETW: 
 			// BOOL NormalCompleteAppExecutionAliasProcessCreation = TRUE;
+
 			Status = CompleteAppExecutionAliasProcessCreationEx(
 				ProcessHandle,
 				ThreadHandle,
@@ -2311,7 +2508,8 @@ BOOL WINAPI CreateProcessInternalW(
 				lpCurrentDirectory,
 				lpCommandLine,
 				CurrentTokenHandle,
-				&AppXSuspendRequired);
+				&ActivationFlag);
+
 			if (!NT_SUCCESS(Status))
 			{
 				BaseSetLastNTError(Status);
@@ -2327,19 +2525,21 @@ BOOL WINAPI CreateProcessInternalW(
 				lpCurrentDirectory,
 				lpCommandLine,
 				CurrentTokenHandle,
-				&AppXSuspendRequired);
+				&ActivationFlag);
+
 			if (Win32Error != 0)
 			{
-				RtlSetLastWin32Error(STATUS_UNSUCCESSFUL);
+				RtlSetLastWin32Error(Win32Error);
+				Status = STATUS_UNSUCCESSFUL;
 				bStatus = FALSE;
 				goto Leave_Cleanup;
 			}
 		}
-		if (AppXSuspendRequired & APPX_PACKEAGE_CREATEION_SUSPEND)
+		if (ActivationFlag & APPX_PACKEAGE_CREATEION_SUSPEND)
 			dwCreationFlags |= CREATE_SUSPENDED;
 	}
 ThreadResumePre:
-	if ((dwCreationFlags & CREATE_SUSPENDED) == 0)
+	if (!(dwCreationFlags & CREATE_SUSPENDED))
 	{
 		Status = NtResumeThread(ThreadHandle, NULL);
 		if (!NT_SUCCESS(Status))
@@ -2409,6 +2609,7 @@ Leave_Cleanup:
 
 	if (ExePathFullBuffer)
 		RtlFreeHeap(RtlProcessHeap(), 0, ExePathFullBuffer);
+
 	RtlFreeUnicodeString(&NtImagePath);
 	if (UnicodeEnvironment)
 		RtlDestroyEnvironment(UnicodeEnvironment);
@@ -2439,7 +2640,7 @@ Leave_Cleanup:
 	if (ActivationToken)
 		NtClose(ActivationToken);
 	if (AppXEnvironment)
-		RtlDestroyEnvironment((PWSTR)AppXEnvironment);
+		RtlDestroyEnvironment(AppXEnvironment);
 	if (QuotedCmdLine)
 		RtlFreeHeap(RtlProcessHeap(), 0, QuotedCmdLine);
 	if (NameBuffer)
@@ -2467,6 +2668,7 @@ Leave_Cleanup:
 
 	if (IsBasepFreeAppCompatDataPresent())
 		BasepFreeAppCompatData(AppCompatData, AppCompatSxsData, SdbQueryResult);
+
 	RtlFreeUnicodeString(&SubSysCommandLine);
 	if ((AnsiStringVDMEnv.Buffer || UnicodeStringVDMEnv.Buffer) && IsBaseDestroyVDMEnvironmentPresent())
 		BaseDestroyVDMEnvironment(&AnsiStringVDMEnv, &UnicodeStringVDMEnv);
@@ -2492,8 +2694,16 @@ Leave_Cleanup:
 		RtlFreeHeap(RtlProcessHeap(), 0, AppXCommandline);
 	if (AliasPathHeap)
 		RtlFreeHeap(RtlProcessHeap(), 0, AliasPathHeap);
+	if(PackageNewCommandLine)
+		RtlFreeHeap(RtlProcessHeap(), 0, PackageNewCommandLine);
 
+	if (lpExtendedPackagedAppContext)//21332
+	{
+		BasepReleasePackagedAppInfo(lpExtendedPackagedAppContext);
+		lpExtendedPackagedAppContext = NULL;
+	}
 	BasepFreeBnoIsolationParameter(&BnoIsolation);
+	BasepFreeActivationTokenInfo(&ActivationTokenInfo);
 	NtCurrentTeb()->LastErrorValue = LastErrorValue;
 	wprintf(L"[*] Clean up done.\n");
 	return bStatus;

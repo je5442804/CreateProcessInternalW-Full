@@ -1,6 +1,6 @@
 ﻿#pragma once
 #define UMDF_USING_NTSTATUS
-
+#pragma comment(lib, "Ntdll.lib")
 #include <ntstatus.h>
 #include "structs.hpp"
 #include "csrss.hpp"
@@ -33,11 +33,13 @@
 #define ULongToPtr( ul ) ((VOID *)(ULONG_PTR)((unsigned long)ul))
 
 #define ULongToPeb32Ptr( ul ) ((PPEB32)(ULONG_PTR)((unsigned long)ul))
+#define BasepQueryAppCompatString L"BasepQueryAppCompat"
+#define BasepGetAppCompatDataString L"BasepGetAppCompatData"
 
 void CreateInfoOutPut(PS_CREATE_INFO CreateInfo);
 void SectionImageInfomationOutPut(SECTION_IMAGE_INFORMATION SectionImageInfomation);
 void BaseCreateProcessMessageOutPut(BASE_SXS_CREATEPROCESS_MSG BaseCreateProcessMessageSxs);
-NTSTATUS ValidateAppExecutionAliasRedirectPackageIdentity(HANDLE KeyHandle, ExtendedAppExecutionAliasInfo_New * AppExecutionAliasInfo);
+NTSTATUS ValidateAppExecutionAliasRedirectPackageIdentity(IN HANDLE KeyHandle, IN ExtendedAppExecutionAliasInfo_New * AppExecutionAliasInfo);
 NTSTATUS  BasepConvertWin32AttributeList(
 	LPPROC_THREAD_ATTRIBUTE_LIST lpAttributeList,
 	BOOLEAN ConvertType, //BOOLEAN IsCreateThread
@@ -51,7 +53,7 @@ NTSTATUS  BasepConvertWin32AttributeList(
 	PPS_MITIGATION_AUDIT_OPTIONS_MAP MitigationAuditOptions,
 	PWIN32K_SYSCALL_FILTER Win32kFilter,//11
 	...
-	//PULONG AllApplicationPackagesPolicyFlags,//12
+	//PULONG AllApplicationPackagesPolicy,//12
 	//PULONG ComponentFilter,
 	//PMAXVERSIONTESTED_INFO MaxVersionTested,
 	//PPS_BNO_ISOLATION_PARAMETERS BnoIsolation,
@@ -82,7 +84,7 @@ BOOL WINAPI CreateProcessInternalW(
 	PHANDLE hRestrictedUserToken
 );
 
-typedef _Null_terminated_ wchar_t* NTSTRSAFE_PWSTR;
+
 
 #define NtCurrentProcess() ((HANDLE)(LONG_PTR)-1)
 #define ZwCurrentProcess() NtCurrentProcess()
@@ -92,7 +94,8 @@ typedef _Null_terminated_ wchar_t* NTSTRSAFE_PWSTR;
 #define ZwCurrentSession() NtCurrentSession()
 #define NtCurrentPeb() (NtCurrentTeb()->ProcessEnvironmentBlock)
 #define RtlProcessHeap() (NtCurrentPeb()->ProcessHeap)
-
+#define DefaultComSpecPath L"\\system32\\cmd.exe"
+#define DefaultComSpecPathStringCount (sizeof(DefaultComSpecPath) - sizeof(UNICODE_NULL)) / sizeof(WCHAR)
 // Windows 8 and above
 #define NtCurrentProcessToken() ((HANDLE)(LONG_PTR)-4) // NtOpenProcessToken(NtCurrentProcess())
 #define NtCurrentThreadToken() ((HANDLE)(LONG_PTR)-5) // NtOpenThreadToken(NtCurrentThread())
@@ -103,20 +106,8 @@ typedef _Null_terminated_ wchar_t* NTSTRSAFE_PWSTR;
 #define SharedUserData  ((KUSER_SHARED_DATA * const) KI_USER_SHARED_DATA)
 //#define GetCurrentTickCount() ((DWORD)((SharedUserData->TickCountMultiplier * (ULONGLONG)SharedUserData->TickCount.LowPart) >> 24))
 
-typedef DWORD(WINAPI* BaseSetLastNTError_)(IN NTSTATUS Status);
-typedef DWORD(NTAPI* RtlSetLastWin32Error_)(IN LONG LastError);
+PVOID BasepIsRealtimeAllowed(BOOLEAN LeaveEnabled, BOOLEAN Impersonating);
 
-typedef VOID(NTAPI* RtlInitUnicodeString_)(PUNICODE_STRING DestinationString, PCWSTR SourceString);
-
-typedef NTSTATUS(NTAPI* RtlStringCchCatW_)(_Inout_updates_(cchDest) _Always_(_Post_z_) NTSTRSAFE_PWSTR 	pszDest,
-	_In_ SIZE_T 	cchDest,
-	_In_ LPCWSTR 	pszSrc
-	);
-
-
-typedef NTSTATUS(NTAPI* RtlGetVersion_)(POSVERSIONINFOEXW lpVersionInformation);
-
-typedef PVOID(WINAPI* BasepIsRealtimeAllowed_)(BOOLEAN LeaveEnabled, BOOLEAN Impersonating);
 typedef NTSTATUS(NTAPI* BasepIsProcessAllowed_)(IN LPWSTR ApplicationName);
 typedef BOOL(NTAPI* BaseUpdateVDMEntry_)(
 	IN ULONG UpdateIndex,
@@ -125,57 +116,158 @@ typedef BOOL(NTAPI* BaseUpdateVDMEntry_)(
 	IN ULONG BinaryType
 	);
 typedef NTSTATUS(NTAPI* BasepCheckWebBladeHashes_)(HANDLE FileHandle);
-typedef NTSTATUS(NTAPI* RtlDestroyProcessParameters_)(PRTL_USER_PROCESS_PARAMETERS ProcessParameters);
-typedef PRTL_USER_PROCESS_PARAMETERS(NTAPI* BasepCreateProcessParameters_)(
-	PCWSTR WindowTitle,
-	PUNICODE_STRING ImageName,
-	LPCWSTR CurrentDirectory,
-	PWSTR CommandLine,
-	LPCWSTR AppXDllDirectory,
-	LPCWSTR AppXRedirectionDllName,
-	BOOLEAN IsPackage,// NewProcess is
-	PVOID Environment,
-	LPSTARTUPINFOW StartInfo,
-	ULONG dwCreationFlags,
-	BOOL DefaultInheritOnly,
-	ULONG ProcessFlags,
-	PCONSOLE_REFERENCE ConsoleHandle,
-	HANDLE ParentProcessHandle
-	);
 
-typedef NTSTATUS(NTAPI* DbgUiConnectToDbg_)(void);
+PRTL_USER_PROCESS_PARAMETERS BasepCreateProcessParameters(
+	IN  LPCWSTR lpApplicationName,
+	IN  PUNICODE_STRING ImageName,
+	IN  LPCWSTR CurrentDirectory,
+	IN  PWSTR CommandLine,
+	IN  LPCWSTR AppXDllDirectory,
+	IN  LPCWSTR AppXRedirectionDllName,
+	IN  BOOLEAN IsPackageProcess,
+	IN  PVOID Environment,
+	IN OUT LPSTARTUPINFOW StartInfo,
+	IN  ULONG dwCreationFlags,
+	IN  BOOL DefaultInheritOnly,
+	IN  ULONG ProcessFlags,
+	IN  PCONSOLE_REFERENCE ConsoleReference,
+	IN  HANDLE ParentProcessHandle
+);
 
-typedef HANDLE(NTAPI* DbgUiGetThreadDebugObject_)(void);
+typedef HANDLE(NTAPI* BaseGetConsoleReference_)(void);
+typedef DWORD(WINAPI* BaseSetLastNTError_)(IN NTSTATUS Status);
 
+EXTERN_C NTSYSAPI NTSTATUS NTAPI RtlCreateProcessParametersWithTemplate(PRTL_USER_PROCESS_PARAMETERS* ProcessParameters, PRTL_USER_PROCESS_PARAMETERS Template, ULONG Flags);
+EXTERN_C NTSYSAPI NTSTATUS NTAPI LdrGetDllDirectory(PUNICODE_STRING DllDirectory);
 
-typedef VOID(NTAPI* RtlDestroyEnvironment_)(PWSTR Environment);
+EXTERN_C NTSYSAPI DWORD NTAPI RtlSetLastWin32Error(IN LONG LastError);
 
-typedef BOOLEAN(NTAPI* RtlDosPathNameToNtPathName_U_)(PCWSTR DosPathName, PUNICODE_STRING NtPathName, PCWSTR* NtFileNamePart, PVOID DirectoryInfo);
-typedef NTSTATUS(WINAPI* RtlGetExePath_)(PCWSTR name, PWSTR* path);
-typedef BOOLEAN(WINAPI* RtlReleasePath_)(PWSTR Path);
-typedef NTSTATUS(WINAPI* RtlInitUnicodeStringEx_)(_Out_ PUNICODE_STRING DestinationString, _In_opt_z_ PCWSTR SourceString);
-typedef NTSTATUS(WINAPI* RtlFreeUnicodeString_)(PUNICODE_STRING UnicodeString);
-typedef RTL_PATH_TYPE(WINAPI* RtlDetermineDosPathNameType_U_)(PCWSTR Path);
-typedef PVOID(WINAPI* RtlAllocateHeap_)(PVOID HeapHandle, ULONG Flags, SIZE_T Size);
-typedef BOOLEAN(WINAPI* RtlFreeHeap_)(PVOID HeapHandle, ULONG Flags, PVOID HeapBase);
-typedef ULONG(WINAPI* RtlIsDosDeviceName_U_)(PCWSTR DosFileName);
-typedef NTSTATUS(WINAPI* RtlGetFullPathName_UstrEx_)(PUNICODE_STRING FileName, PUNICODE_STRING StaticString, PUNICODE_STRING DynamicString, PUNICODE_STRING* StringUsed, PSIZE_T FilePartSize, PBOOLEAN NameInvalid, RTL_PATH_TYPE* PathType, PSIZE_T LengthNeeded);
-typedef NTSTATUS(WINAPI* RtlCreateEnvironmentEx_)(PVOID SourceEnv, PVOID* Environment, ULONG Flags);
-typedef PIMAGE_NT_HEADERS(WINAPI* RtlImageNtHeader_)(PVOID BaseAddress);
-typedef NTSTATUS(WINAPI* RtlWow64GetProcessMachines_)(HANDLE process, USHORT* CurrentMachine, USHORT* TargetMachine);
+EXTERN_C NTSYSAPI NTSTATUS NTAPI DbgUiConnectToDbg(void);
+EXTERN_C NTSYSAPI HANDLE NTAPI DbgUiGetThreadDebugObject(void);
 
-typedef NTSTATUS(WINAPI* LdrQueryImageFileKeyOption_)(
+EXTERN_C NTSYSAPI NTSTATUS NTAPI RtlDestroyEnvironment(PVOID Environment);
+
+EXTERN_C NTSYSAPI BOOLEAN NTAPI RtlDosPathNameToNtPathName_U(
+	IN  PCWSTR DosPathName,
+	OUT PUNICODE_STRING NtPathName,
+	OUT PWSTR* NtFileNamePart OPTIONAL,
+	OUT PCURDIR DirectoryInfo OPTIONAL
+);
+
+EXTERN_C NTSYSAPI NTSTATUS NTAPI RtlGetExePath(PCWSTR name, PWSTR* path);
+EXTERN_C NTSYSAPI BOOLEAN NTAPI RtlReleasePath(PWSTR Path);
+
+EXTERN_C NTSYSAPI NTSTATUS NTAPI RtlInitUnicodeStringEx(_Out_ PUNICODE_STRING DestinationString, _In_opt_z_ PCWSTR SourceString);
+EXTERN_C NTSYSAPI VOID NTAPI RtlInitUnicodeString(_Out_ PUNICODE_STRING DestinationString, _In_opt_z_ PCWSTR SourceString);
+EXTERN_C NTSYSAPI NTSTATUS NTAPI RtlFreeUnicodeString(PUNICODE_STRING UnicodeString);
+
+EXTERN_C NTSYSAPI RTL_PATH_TYPE NTAPI RtlDetermineDosPathNameType_U(PCWSTR Path);
+EXTERN_C NTSYSAPI PVOID NTAPI RtlAllocateHeap(PVOID HeapHandle, ULONG Flags, SIZE_T Size);
+EXTERN_C NTSYSAPI BOOLEAN NTAPI RtlFreeHeap(PVOID HeapHandle, ULONG Flags, PVOID HeapBase);
+EXTERN_C NTSYSAPI ULONG NTAPI RtlIsDosDeviceName_U(PCWSTR DosFileName);
+EXTERN_C NTSYSAPI NTSTATUS NTAPI RtlGetFullPathName_UstrEx(PUNICODE_STRING FileName, PUNICODE_STRING StaticString, PUNICODE_STRING DynamicString, PUNICODE_STRING* StringUsed, PSIZE_T FilePartSize, PBOOLEAN NameInvalid, RTL_PATH_TYPE* PathType, PSIZE_T LengthNeeded);
+EXTERN_C NTSYSAPI NTSTATUS NTAPI RtlCreateEnvironmentEx(PVOID SourceEnv, PVOID* Environment, ULONG Flags);
+EXTERN_C NTSYSAPI PIMAGE_NT_HEADERS NTAPI RtlImageNtHeader(PVOID BaseAddress);
+EXTERN_C NTSYSAPI NTSTATUS NTAPI RtlWow64GetProcessMachines(HANDLE process, USHORT* CurrentMachine, USHORT* TargetMachine);
+EXTERN_C NTSYSAPI NTSTATUS NTAPI RtlDestroyProcessParameters(PRTL_USER_PROCESS_PARAMETERS ProcessParameters);
+
+EXTERN_C NTSYSAPI NTSTATUS NTAPI LdrQueryImageFileKeyOption(
 	HANDLE KeyHandle,
 	PCWSTR ValueName,
 	ULONG Type,
 	LPCWSTR Buffer,
 	ULONG BufferSize,
 	PULONG ReturnedLength
-	);
+);
+
+EXTERN_C NTSYSAPI
+BOOLEAN
+NTAPI
+RtlEqualSid(
+	IN PSID Sid1,
+	IN PSID Sid2
+);
+
+EXTERN_C NTSYSAPI
+NTSTATUS
+NTAPI
+RtlConvertSidToUnicodeString(
+	OUT PUNICODE_STRING UnicodeString,
+	IN  PSID Sid,
+	IN  BOOLEAN AllocateDestinationString
+);
+
+EXTERN_C NTSYSAPI
+PULONG
+NTAPI
+RtlSubAuthoritySid(
+	_In_ PSID Sid,
+	_In_ ULONG SubAuthority
+);
+
+EXTERN_C NTSYSAPI
+PVOID
+NTAPI
+RtlFreeSid(
+	IN PSID Sid
+);
+
+EXTERN_C NTSYSAPI
+ULONG
+NTAPI
+RtlLengthRequiredSid(
+	_In_ ULONG SubAuthorityCount
+);
+
+EXTERN_C NTSYSAPI
+NTSTATUS
+NTAPI
+RtlGetAppContainerSidType(
+	_In_ PSID AppContainerSid,
+	_Out_ PAPPCONTAINER_SID_TYPE AppContainerSidType
+);
+
+EXTERN_C NTSYSAPI
+NTSTATUS
+NTAPI
+RtlGetAppContainerParent(
+	_In_ PSID AppContainerSid,
+	_Out_ PSID* AppContainerSidParent // RtlFreeSid
+);
+
+EXTERN_C NTSYSAPI
+ULONG
+NTAPI
+RtlGetCurrentServiceSessionId(
+	VOID
+);
+
+
+#define RTL_ACQUIRE_PRIVILEGE_REVERT 0x00000001
+#define RTL_ACQUIRE_PRIVILEGE_PROCESS 0x00000002
+
+EXTERN_C NTSYSAPI
+NTSTATUS
+NTAPI
+RtlAcquirePrivilege(
+	_In_ PULONG Privilege,
+	_In_ ULONG NumPriv,
+	_In_ ULONG Flags,
+	_Out_ PVOID* ReturnedState
+);
+
+
+EXTERN_C NTSYSAPI
+VOID
+NTAPI
+RtlReleasePrivilege(
+	_In_ PVOID StatePointer
+);
+
 typedef BOOL(WINAPI* BuildSubSysCommandLine_)(
 	ULONG  Type,
 	LPCWSTR NewCommandLine,
-	ULONG_PTR Reversed,
+	ULONG_PTR Reserved,
 	LPCWSTR RawCommandLine,
 	PUNICODE_STRING SubSysCommandLine
 	);
@@ -196,38 +288,6 @@ typedef NTSTATUS(WINAPI* BasepConvertWin32AttributeList_)(
 	...
 	);
 
-
-
-
-/*
-typedef NTSTATUS(WINAPI* BasepConvertWin32AttributeList_)(
-	LPPROC_THREAD_ATTRIBUTE_LIST lpAttributeList,
-	BOOLEAN ConvertType, //BOOLEAN IsCreateThread
-	PULONG ExtendedFlags,
-	PUNICODE_STRING PackageFullName,
-	PSECURITY_CAPABILITIES * SecurityCapabilities,
-	BOOLEAN * HasHandleList,
-	PHANDLE ParentProcessHandle,
-	CONSOLE_REFERENCE * ConsoleHandleInfo,
-	PPS_MITIGATION_OPTIONS_MAP MitigationOptions,
-	PPS_MITIGATION_AUDIT_OPTIONS_MAP MitigationAuditOptions,
-	PWIN32K_SYSCALL_FILTER Win32kFilter,//11
-
-	PULONG AllApplicationPackagesPolicyFlags,//
-	PULONG ComponentFilter,
-	PMAXVERSIONTESTED_INFO MaxVersionTested,
-	PPS_BNO_ISOLATION_PARAMETERS BnoIsolation,
-	DWORD * DesktopAppPolicy,
-	PISOLATION_MANIFEST_PROPERTIES IsolationManifest,
-	PUNICODE_STRING UnknowStringProcThread20,//
-	ULONG_PTR * UnknowPVOIDProcThread21,//
-	PPS_TRUSTLET_CREATE_ATTRIBUTES TrustletAttributes,
-	PULONG ProcessFlags,//
-	PPS_ATTRIBUTE_LIST AttributeList,
-	PULONG AttributeListCount,
-	IN OPTIONAL ULONG ProcThreadAttributeMaxCount
-);
-*/
 typedef NTSTATUS(WINAPI* BasepQueryAppCompat_)(
 	PSECTION_IMAGE_INFORMATION SectionImageInfomation,
 	BOOL AddressSpaceOverride,
@@ -270,15 +330,16 @@ typedef BOOL(WINAPI* BasepInitAppCompatData_)(
 	DWORD AppCompatDataSize
 	);
 
-typedef NTSTATUS(WINAPI* BasepUpdateProcessParametersField_)(
+NTSTATUS BasepUpdateProcessParametersField(
 	IN HANDLE ProcessHandle,
-	IN PVOID ValuePointer,
+	IN LPVOID* ValuePointer,//ULONGLONG*
 	IN SIZE_T NumberOfBytesToWrite,
-	OUT PVOID ValueFix,
+	IN LPVOID* Wow64ValuePointer,//ULONG*
 	IN ULONGLONG ProcessParametersOffset,
 	IN ULONG ProcessParametersWow64Offset,
-	IN PPS_CREATE_INFO CreateInfo
-	);
+	IN PPS_CREATE_INFO CreateInfo);
+
+
 typedef NTSTATUS(WINAPI* BaseCheckElevation_)(
 	IN HANDLE ProcessHandle,
 	IN HANDLE FileHandle,
@@ -297,6 +358,16 @@ typedef LONG(WINAPI* BasepGetPackageActivationTokenForSxS_)(
 	HANDLE TokenHandle,
 	PHANDLE ActivationToken
 	);
+
+typedef LONG(WINAPI* BasepGetPackageActivationTokenForSxS2_)(
+	PVOID PackageActivationSxsInfo,
+	HANDLE TokenHandle,
+	PACTIVATION_TOKEN_INFO ActivationTokenInfo
+	);
+
+//LONG ULONG
+typedef DWORD(WINAPI* BasepFreeActivationTokenInfo_)(PACTIVATION_TOKEN_INFO ActivationTokenInfo);
+
 typedef LONG(WINAPI* GetPackageFullNameFromToken__)(
 	_In_ HANDLE token,
 	_Inout_ UINT32* packageFullNameLength,
@@ -312,23 +383,42 @@ typedef VOID(NTAPI* RtlGetDeviceFamilyInfoEnum_)(
 	);
 
 typedef NTSTATUS(WINAPI* BasepCreateLowBox_)(HANDLE TokenHandle, PSECURITY_CAPABILITIES SecurityCapabilities, PHANDLE LowBoxToken);
-typedef BOOL(WINAPI* BasepAdjustApplicationPath_)(PUNICODE_STRING ApplicationPath);
+BOOL BasepAdjustApplicationPath(IN OUT PUNICODE_STRING ApplicationPath);
 typedef NTSTATUS(WINAPI* CheckAppXPackageBreakaway_)(PWSTR Buffer, PBOOL UnknowAppXPackageBreakaway);
 
-typedef NTSTATUS(WINAPI* LoadAppExecutionAliasInfoForExecutable_)(
+/*
+NTSTATUS(WINAPI* LoadAppExecutionAliasInfoForExecutable_)(
 	PWSTR DosPath,
 	HANDLE TokenHandle,
-	HANDLE ProcessHeap,
+	HANDLE AliasHeap,
 	ExtendedAppExecutionAliasInfo** AppExecutionAliasInfo);
-typedef LONG(WINAPI* GetAppExecutionAliasPath_)(PWSTR Win32ImagePath, HANDLE TokenHandle, PWSTR OutAliasPath, DWORD* Length);
+*/
+NTSTATUS LoadAppExecutionAliasInfoForExecutable(
+	IN  HANDLE KeyHandle,
+	IN  PWSTR Win32ImagePath,
+	IN  HANDLE TokenHandle,
+	IN  HANDLE HeapHandle,
+	OUT	ExtendedAppExecutionAliasInfo** lppAppExecutionAliasInfo);
+
+typedef LONG(WINAPI* GetAppExecutionAliasPath_)(PWSTR Win32ImagePath, HANDLE TokenHandle, PWSTR OutAliasFullPath, DWORD* Length);
+typedef LONG(WINAPI* GetAppExecutionAliasPathEx_)(PWSTR Win32ImagePath, PWSTR SpecialAliasPackagesDirectory, HANDLE TokenHandle, PWSTR OutAliasFullPath, DWORD* Length);
+
+
 typedef NTSTATUS(WINAPI* LoadAppExecutionAliasInfoEx_)(PWSTR DosPath, HANDLE TokenHandle, ExtendedAppExecutionAliasInfo** AppExecutionAliasInfo);
-typedef NTSTATUS(WINAPI* ValidateAppXAliasFallback_)(LPCWSTR lpFileName, PVOID AppExecutionAliasInfo);
+NTSTATUS ValidateAppXAliasFallback(LPCWSTR RawBaseImagePath, ExtendedAppExecutionAliasInfo* AppExecutionAliasInfo);
 typedef VOID(WINAPI* BasepReleaseAppXContext_)(PVOID AppXContent);
 typedef BOOLEAN(WINAPI* BasepFreeAppCompatData_)(PVOID AppCompatData, PVOID AppCompatSxsData, PVOID SdbQueryResult);
 typedef BOOLEAN(WINAPI* BasepReleaseSxsCreateProcessUtilityStruct_)(PSXS_CREATEPROCESS_UTILITY SxsCreateProcessUtilityStruct);
-typedef BOOLEAN(WINAPI* BasepFreeBnoIsolationParameter_)(PPS_BNO_ISOLATION_PARAMETERS BnoIsolationParameter);
 
-typedef VOID(WINAPI* CsrFreeCaptureBuffer_)(PCSR_CAPTURE_BUFFER CaptureBuffer);
+//typedef BOOLEAN(WINAPI* BasepFreeBnoIsolationParameter_)(PPS_BNO_ISOLATION_PARAMETERS BnoIsolationParameter);
+BOOLEAN BasepFreeBnoIsolationParameter(PPS_BNO_ISOLATION_PARAMETERS BnoIsolationParameter);
+NTSTATUS BasepFreeActivationTokenInfo(PACTIVATION_TOKEN_INFO lpActivationTokenInfo);
+
+VOID BasepAddToOrUpdateAttributesList(
+	PPS_ATTRIBUTE_LIST AttributeListSource,
+	ULONG AttributeListSourceCount,
+	PPS_ATTRIBUTE_LIST AttributeListDest,
+	PULONG AttributeListDestCount);
 
 typedef NTSTATUS(WINAPI* BaseFormatObjectAttributes_)(
 	POBJECT_ATTRIBUTES LocalObjectAttributes,
@@ -336,7 +426,9 @@ typedef NTSTATUS(WINAPI* BaseFormatObjectAttributes_)(
 	PUNICODE_STRING ObjectName,
 	POBJECT_ATTRIBUTES* ObjectAttributes
 	);
-typedef VOID(WINAPI* BasepAddToOrUpdateAttributesList_)(PPS_ATTRIBUTE_LIST AttributeListSource, ULONG AttributeListSourceCount, PPS_ATTRIBUTE_LIST AttributeListDest, PULONG AttributeListDestCount);
+
+NTSTATUS BasepCreateBnoIsolationObjectDirectories(IN HANDLE TokenHandle, IN OUT PPS_BNO_ISOLATION_PARAMETERS BnoIsolation);
+
 
 typedef NTSTATUS(WINAPI* GetEmbeddedImageMitigationPolicy_)(
 	PISOLATION_MANIFEST_PROPERTIES IsolationManifest,
@@ -354,8 +446,8 @@ typedef NTSTATUS(WINAPI* BasepAppXExtension_)(
 	);
 
 typedef NTSTATUS(WINAPI* BasepAppContainerEnvironmentExtension_)(PSID AppContainerSid, PVOID Environment, PVOID* AppXEnvironmentExtension);
-typedef NTSTATUS(WINAPI* BasepCreateBnoIsolationObjectDirectories_)(HANDLE TokenHandle, PPS_BNO_ISOLATION_PARAMETERS BnoIsolation);
 
+typedef NTSTATUS(WINAPI* BasepGetPackagedAppInfoForFile_)(LPCWSTR PackageImagePath, HANDLE TokenHandle, BOOL IsCreateProcess, ExtendedPackagedAppContext::ExtendedPackagedAppContext** lppExtendedPackagedAppContext);
 
 typedef NTSTATUS(WINAPI* AppModelPolicy_GetPolicy_Internal_)(
 	HANDLE TokenHandle,
@@ -416,11 +508,24 @@ typedef BOOL(WINAPI* NtVdm64CreateProcessInternalW_)(
 typedef NTSTATUS(WINAPI* BasepPostSuccessAppXExtension_)(HANDLE ProcessHandle, PAPPX_PROCESS_CONTEXT AppXContext);
 
 
+typedef NTSTATUS(WINAPI* CompletePackagedProcessCreationEx_)(
+	HANDLE ProcessHandle,
+	HANDLE ThreadHandle,
+	BOOL IsConsoleUWPApp,
+	BOOL IsMultipleInstancesUWPApp,
+	LPCWSTR lpCurrentDirectory,
+	LPCWSTR lpCommandLine,
+	BOOL IsAppExecutionAliasType,
+	HANDLE TokenHandle,
+	PULONG AppResumeRequired
+	);
+
+
 typedef NTSTATUS(WINAPI* CompleteAppExecutionAliasProcessCreationEx_)(
-	HANDLE ProcessHandle1,
-	HANDLE ThreadHandle1,
-	BOOL UWPLaunchMode,//DWORD - ULONG
-	LPCWSTR lpCurrentDirectory1,
+	HANDLE ProcessHandle,
+	HANDLE ThreadHandle,
+	BOOL UWPLaunchMode,
+	LPCWSTR lpCurrentDirectory,
 	LPCWSTR lpCommandLine,
 	HANDLE TokenHandle,
 	PULONG AppResumeRequired
@@ -439,8 +544,13 @@ typedef VOID(WINAPI* PerformAppxLicenseRundownEx_)(
 	PWSTR AppXPackageName,
 	HANDLE TokenHandle
 	);
+
+typedef VOID(WINAPI* BasepReleasePackagedAppInfo_)(ExtendedPackagedAppContext::ExtendedPackagedAppContext* ExtendedAppContext);
+
 typedef VOID(WINAPI* FreeAppExecutionAliasInfoEx_)(
 	ExtendedAppExecutionAliasInfo* AppExecutionAliasInfo
 	);
 typedef BOOL(WINAPI* BaseDestroyVDMEnvironment_)(IN PANSI_STRING AnsiEnv, IN PUNICODE_STRING UnicodeEnv);
 
+
+NTSTATUS BasepFreeActivationTokenInfo(PACTIVATION_TOKEN_INFO lpActivationTokenInfo);

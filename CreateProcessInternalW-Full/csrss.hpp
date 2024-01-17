@@ -144,6 +144,7 @@ typedef struct _CSR_API_MESSAGE {
     };
 } CSR_API_MESSAGE, * PCSR_API_MESSAGE;
 
+
 typedef struct _SXS_CONSTANT_WIN32_NT_PATH_PAIR
 {
     PCUNICODE_STRING Win32;
@@ -230,9 +231,9 @@ typedef struct _BASE_SXS_CREATEPROCESS_MSG {//win 10 new
     SUPPORTED_OS_INFO SxsSupportOSInfo;// [20] + 4 164->168 [SwitchBackSupportOSInfo]
     UNICODE_STRING AssemblyName;    //168->184 L"-----------------------------------------------------------" [21]-[22] //Microsoft.Windows.Shell.notepad
     ULONGLONG SxsMaxVersionTested;//184->192 [23]
-    WCHAR ApplicationUserModelId[APPLICATION_USER_MODEL_ID_MAX_LENGTH];// 312
-    ULONG ApplicationUserModelIdLength;
-} BASE_SXS_CREATEPROCESS_MSG, * PBASE_SXS_CREATEPROCESS_MSG; 
+    WCHAR ApplicationUserModelId[APPLICATION_USER_MODEL_ID_MAX_LENGTH];//192
+    ULONG ApplicationUserModelIdLength;//452
+} BASE_SXS_CREATEPROCESS_MSG, * PBASE_SXS_CREATEPROCESS_MSG; //0x1C8 = 456
 
 typedef struct _BASE_CREATE_PROCESS {
     HANDLE ProcessHandle;//0
@@ -242,7 +243,7 @@ typedef struct _BASE_CREATE_PROCESS {
     ULONG VdmBinaryType;//36
     ULONG VdmTask;//40
     HANDLE hVDM;//48
-    BASE_SXS_CREATEPROCESS_MSG Sxs;  //
+    BASE_SXS_CREATEPROCESS_MSG Sxs;  //56
     ULONGLONG PebAddressNative; //
     ULONGLONG PebAddressWow64;//
     USHORT ProcessorArchitecture;
@@ -259,7 +260,7 @@ typedef struct _BASE_API_MSG
     union
     {
         //BASE_CREATETHREAD_MSG  BaseCreateThread;
-        BASE_CREATEPROCESS_MSG BaseCreateProcess;//+8 64
+        BASE_CREATEPROCESS_MSG BaseCreateProcess;//64
     }u;
 }BASE_API_MSG, * PBASE_API_MSG;
 
@@ -320,7 +321,7 @@ typedef struct _SXS_GENERATE_ACTIVATION_CONTEXT_PARAMETERS
     //PVOID                       ImpersonationContext;
     OUT ULONGLONG               SxsMaxVersionTested;//120
     WCHAR ApplicationUserModelId[APPLICATION_USER_MODEL_ID_MAX_LENGTH];//128 
-    DWORD UnkowAppX;//??? APPLICATION_USER_MODEL_ID_MAX_LENGTH + 2 ?
+    ULONG ApplicationUserModelIdLength;//??? APPLICATION_USER_MODEL_ID_MAX_LENGTH + 2 ?
 
     PCWSTR AssemblyName;//392
     USHORT AssemblyNameLength;
@@ -345,7 +346,7 @@ typedef struct _BASE_SXS_CREATE_ACTIVATION_CONTEXT_MSG {
     UNICODE_STRING          AssemblyName;//216
     ULONGLONG SxsMaxVersionTested;//232
     WCHAR ApplicationUserModelId[APPLICATION_USER_MODEL_ID_MAX_LENGTH];//240
-    DWORD UnkowAppX;
+    ULONG ApplicationUserModelIdLength;
 } BASE_SXS_CREATE_ACTIVATION_CONTEXT_MSG, * PBASE_SXS_CREATE_ACTIVATION_CONTEXT_MSG;//504
 typedef const BASE_SXS_CREATE_ACTIVATION_CONTEXT_MSG* PCBASE_SXS_CREATE_ACTIVATION_CONTEXT_MSG;
 
@@ -380,9 +381,10 @@ typedef NTSTATUS(WINAPI* BasepConstructSxsCreateProcessMessage_)(
     OUT PSXS_CREATEPROCESS_UTILITY SxsCreateProcessUtilityStruct
 ); 
 
-typedef NTSTATUS(NTAPI* CsrCaptureMessageMultiUnicodeStringsInPlace_)(
+EXTERN_C NTSYSAPI NTSTATUS NTAPI CsrCaptureMessageMultiUnicodeStringsInPlace(
     IN OUT PCSR_CAPTURE_BUFFER* InOutCaptureBuffer,
     IN ULONG                    NumberOfStringsToCapture,
     IN const PUNICODE_STRING* StringsToCapture
     );
-typedef NTSTATUS(WINAPI* CsrClientCallServer_)(PCSR_API_MESSAGE ApiMessage, PCSR_CAPTURE_BUFFER  CaptureBuffer, ULONG ApiNumber, ULONG DataLength);
+EXTERN_C NTSYSAPI NTSTATUS NTAPI CsrClientCallServer(PCSR_API_MESSAGE ApiMessage, PCSR_CAPTURE_BUFFER  CaptureBuffer, ULONG ApiNumber, ULONG DataLength);
+EXTERN_C NTSYSAPI VOID NTAPI CsrFreeCaptureBuffer(PCSR_CAPTURE_BUFFER CaptureBuffer);

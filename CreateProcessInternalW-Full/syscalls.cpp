@@ -8,17 +8,17 @@
 
 SW3_SYSCALL_LIST SW3_SyscallList;
 
-PVOID BaseStaticServerData;
+PBASE_STATIC_SERVER_DATA BaseStaticServerData;
 ULONG KernelBaseGlobalData;
 USHORT OSBuildNumber;
+HANDLE ConhostConsoleHandle;
 
-BasepIsRealtimeAllowed_ BasepIsRealtimeAllowed;
-BasepAdjustApplicationPath_ BasepAdjustApplicationPath;
 AppModelPolicy_GetPolicy_Internal_ AppModelPolicy_GetPolicy_Internal;
 
 ApiSetCheckFunction IsBasepConstructSxsCreateProcessMessagePresent;
 ApiSetCheckFunction IsBasepInitAppCompatDataPresent;
 ApiSetCheckFunction IsBasepAppXExtensionPresent;
+ApiSetCheckFunction IsBasepGetPackagedAppInfoForFilePresent;
 ApiSetCheckFunction IsBasepGetAppCompatDataPresent;
 ApiSetCheckFunction IsBaseCheckElevationPresent;
 ApiSetCheckFunction IsBaseWriteErrorElevationRequiredEventPresent;
@@ -41,55 +41,33 @@ ApiSetCheckFunction IsRaiseInvalid16BitExeErrorPresent;
 ApiSetCheckFunction IsCheckAppXPackageBreakawayPresent;
 ApiSetCheckFunction IsGetAppExecutionAliasPathPresent;
 ApiSetCheckFunction IsLoadAppExecutionAliasInfoExPresent;
+ApiSetCheckFunction IsGetAppExecutionAliasPathExPresent;
+
 
 BasepConvertWin32AttributeList_ BasepConvertWin32AttributeList_inline;
-BasepFreeBnoIsolationParameter_ BasepFreeBnoIsolationParameter;
-BasepAddToOrUpdateAttributesList_ BasepAddToOrUpdateAttributesList;
-BasepCreateBnoIsolationObjectDirectories_ BasepCreateBnoIsolationObjectDirectories;
 BasepCreateLowBox_ BasepCreateLowBox;
-BasepCreateProcessParameters_ BasepCreateProcessParameters;
+
 BuildSubSysCommandLine_ BuildSubSysCommandLine;
 BasepGetConsoleHost_ BasepGetConsoleHost;
-BasepUpdateProcessParametersField_ BasepUpdateProcessParametersField;
-ValidateAppXAliasFallback_ ValidateAppXAliasFallback;
-LoadAppExecutionAliasInfoForExecutable_ LoadAppExecutionAliasInfoForExecutable;
+//LoadAppExecutionAliasInfoForExecutable_ LoadAppExecutionAliasInfoForExecutable;
 
-CsrCaptureMessageMultiUnicodeStringsInPlace_ CsrCaptureMessageMultiUnicodeStringsInPlace;
-CsrClientCallServer_ CsrClientCallServer;
-DbgUiConnectToDbg_ DbgUiConnectToDbg;
-DbgUiGetThreadDebugObject_ DbgUiGetThreadDebugObject;
-RtlSetLastWin32Error_ RtlSetLastWin32Error;
-RtlGetExePath_ RtlGetExePath;
-RtlReleasePath_ RtlReleasePath;
-RtlInitUnicodeString_ RtlInitUnicodeString;
-RtlInitUnicodeStringEx_ RtlInitUnicodeStringEx;
-RtlFreeUnicodeString_ RtlFreeUnicodeString;
-RtlDosPathNameToNtPathName_U_ RtlDosPathNameToNtPathName_U;
-RtlDetermineDosPathNameType_U_ RtlDetermineDosPathNameType_U;
-RtlGetFullPathName_UstrEx_ RtlGetFullPathName_UstrEx;
-RtlIsDosDeviceName_U_ RtlIsDosDeviceName_U;
-RtlAllocateHeap_ RtlAllocateHeap;
-RtlFreeHeap_ RtlFreeHeap;
-RtlCreateEnvironmentEx_ RtlCreateEnvironmentEx;
-RtlImageNtHeader_ RtlImageNtHeader;
-RtlDestroyEnvironment_ RtlDestroyEnvironment;
-RtlWow64GetProcessMachines_ RtlWow64GetProcessMachines;
-RtlDestroyProcessParameters_ RtlDestroyProcessParameters;
-LdrQueryImageFileKeyOption_ LdrQueryImageFileKeyOption;
-RtlGetVersion_ RtlGetVersion;
 GetPackageFullNameFromToken__ GetPackageFullNameFromToken_;
-CsrFreeCaptureBuffer_ CsrFreeCaptureBuffer;
+
 KernelBaseGetGlobalData_ KernelBaseGetGlobalData;
 BaseFormatObjectAttributes_ BaseFormatObjectAttributes;
 CheckAppXPackageBreakaway_ CheckAppXPackageBreakaway;
 LoadAppExecutionAliasInfoEx_ LoadAppExecutionAliasInfoEx;
 GetAppExecutionAliasPath_ GetAppExecutionAliasPath;
+GetAppExecutionAliasPathEx_ GetAppExecutionAliasPathEx;
+
+CompletePackagedProcessCreationEx_ CompletePackagedProcessCreationEx;
 CompleteAppExecutionAliasProcessCreationEx_ CompleteAppExecutionAliasProcessCreationEx;
 PerformAppxLicenseRundownEx_ PerformAppxLicenseRundownEx;
 FreeAppExecutionAliasInfoEx_ FreeAppExecutionAliasInfoEx;
 GetEmbeddedImageMitigationPolicy_ GetEmbeddedImageMitigationPolicy;
 BaseSetLastNTError_ BaseSetLastNTError;
 BasepAppXExtension_ BasepAppXExtension;
+BasepGetPackagedAppInfoForFile_ BasepGetPackagedAppInfoForFile;
 BasepConstructSxsCreateProcessMessage_ BasepConstructSxsCreateProcessMessage;
 BasepAppContainerEnvironmentExtension_ BasepAppContainerEnvironmentExtension;
 BasepFreeAppCompatData_ BasepFreeAppCompatData;
@@ -108,9 +86,11 @@ BasepInitAppCompatData_ BasepInitAppCompatData;
 BaseWriteErrorElevationRequiredEvent_ BaseWriteErrorElevationRequiredEvent;
 BaseCheckElevation_ BaseCheckElevation;
 BasepGetPackageActivationTokenForSxS_ BasepGetPackageActivationTokenForSxS;
+BasepGetPackageActivationTokenForSxS2_ BasepGetPackageActivationTokenForSxS2;
 BaseElevationPostProcessing_ BaseElevationPostProcessing;
 BasepPostSuccessAppXExtension_ BasepPostSuccessAppXExtension;
 BasepFinishPackageActivationForSxS_ BasepFinishPackageActivationForSxS;
+BasepReleasePackagedAppInfo_ BasepReleasePackagedAppInfo;
 BaseDestroyVDMEnvironment_ BaseDestroyVDMEnvironment;
 
 NtVdm64CreateProcessInternalW_ NtVdm64CreateProcessInternalW = NULL;
@@ -211,96 +191,81 @@ int GetGloablVariable()
 
 	}
 	*/
-	BaseStaticServerData = (char*)NtCurrentPeb()->ReadOnlySharedMemoryBase
-		+ (ULONGLONG)NtCurrentPeb()->ReadOnlyStaticServerData[BASESRV_SERVERDLL_INDEX]
-		- NtCurrentPeb()->CsrServerReadOnlySharedMemoryBase;
+	if (!ConhostConsoleHandle)
+	{
+		ConhostConsoleHandle = (BaseGetConsoleReference_)GetProcAddress(KernelBase, "BaseGetConsoleReference")();
+	}
+
+
+
+	BaseStaticServerData = BASE_SHARED_SERVER_DATA;
+
 	if (BaseStaticServerData)
 		dprintf(L"[+] BaseStaticServerData: 0x%p\n", BaseStaticServerData);
 
-	//KernelBaseGlobalData
 	return 0;
 }
 
 //PVOID KernelBase, DWORD SizeofKernelBase
 void GetUnexportFunction(DWORD SizeofKernelBase)
 {
-	BYTE signaturecode0[] = { 0x48,0x83,0xEC,0x20,0x45,0x33,0xC0,0xC7,0x40,0x10,0x0E,0x00,0x00,0x00 };//BasepIsRealtimeAllowed
-	BYTE signaturecode1[] = { 0x0F,0xB7,0x11,0x4C,0x8B,0xC1,0xD1,0xEA };//BasepAdjustApplicationPath              0x75 0x07, 0xeb, 0x0a 
-	BYTE signaturecode2[] = { 0x48,0x8b,0xc4,0x48,0x89,0x58,0x08,0x48,0x89,0x68,0x10,0x48,0x89,0x70,0x18 ,0x48,0x83,0xec,0x40,0x48,0x8b,0x5c,0x24,0x70 };
+	//BYTE signaturecode0[] = { 0x48,0x83,0xEC,0x20,0x45,0x33,0xC0,0xC7,0x40,0x10,0x0E,0x00,0x00,0x00 };//BasepIsRealtimeAllowed
+	//BYTE signaturecode1[] = { 0x0F,0xB7,0x11,0x4C,0x8B,0xC1,0xD1,0xEA };//BasepAdjustApplicationPath              0x75 0x07, 0xeb, 0x0a 
+	BYTE signaturecode2[] = {0x85, 0xC0};
 	BYTE signaturecode3[] = { 0x48,0x83,0xec,0x28,0x8b,0x0d,  0x00,0x83,0xf9,0x01,0x75,0x04,0x8a,0xc1,0xeb,0x36,0x83,0xf9,0x02 };
-	BYTE signaturecode4[] = { 0x48,0x89,0x5C,0x24,0x18,0x48,0x89,0x74,0x24,0x20,0x55,0x57,0x41,0x54,0x41,0x56,0x41,0x57,0x48,0x8D,0xAC,0x24,0x70,0xFF,0xFF,0xFF };//ValidateAppXAliasFallback
+	//BYTE signaturecode4[] = { 0x48,0x89,0x5C,0x24,0x18,0x48,0x89,0x74,0x24,0x20,0x55,0x57,0x41,0x54,0x41,0x56,0x41,0x57,0x48,0x8D,0xAC,0x24,0x70,0xFF,0xFF,0xFF };//ValidateAppXAliasFallback
 
 	//BYTE signaturecode5[] = { 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8B, 0xEC, 0x48, 0x83, 0xEC, 0x58, 0x4C, 0x8B, 0x8D };//BasepConvertWin32AttributeList
 
 
 	BYTE signaturecode5[] = { 0x00, 0x00, 0xB2, 0x01 };
 
+	// 0x38 0x??
 	BYTE signaturecode6[] = { 0XCC,0xCC,0x48,0x85,0xC9,0x74,0x38,0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x6C,0x24,0x10,0x48,0x89,0x74,0x24,0x18,0x57 }; //BasepFreeBnoIsolationParameter
-	BYTE signaturecode7[] = { 0xCC,0x48,0x89,0x5C,0x24,0x08,0x45,0x8B,0x19,0x85,0xD2,0x74,0x5B,0x4C,0x8D,0x51,0x08,0x8B,0xD2 };//BasepAddToOrUpdateAttributesList
-	BYTE signaturecode8[] = { 0xCC,0x48,0x89,0x5C,0x24,0x18,0x48,0x89,0x74,0x24,0x20,0x55,0x57,0x41,0x56,0x48,0x8B,0xEC,0x48,0x83,0xEC,0x70 };//BasepCreateBnoIsolationObjectDirectories
-	BYTE signaturecode9[] = { 0x48,0x8D,0xAC,0x24,0x78,0xFC,0xFF,0xFF };//BasepCreateProcessParameters
+	//BYTE signaturecode7[] = { 0xCC,0x48,0x89,0x5C,0x24,0x08,0x45,0x8B,0x19,0x85,0xD2,0x74,0x5B,0x4C,0x8D,0x51,0x08,0x8B,0xD2 };//BasepAddToOrUpdateAttributesList
+	//BYTE signaturecode8[] = { 0xCC,0x48,0x89,0x5C,0x24,0x18,0x48,0x89,0x74,0x24,0x20,0x55,0x57,0x41,0x56,0x48,0x8B,0xEC,0x48,0x83,0xEC,0x70 };//BasepCreateBnoIsolationObjectDirectories
+	//BYTE signaturecode9[] = { 0x48,0x8D,0xAC,0x24,0x78,0xFC,0xFF,0xFF };//BasepCreateProcessParameters
 	BYTE signaturecode10[] = { 0xC7,0x45,0xD0,0x08,0x00,0x0A,0x00 }; //BuildSubSysCommandLine
 	BYTE signaturecode11[] = { 0x41,0xb9,0x08,0x00,0x00,0x00,0x48,0x83,0xc9,0xff }; //BasepGetConsoleHost
 	BYTE signaturecode12[] = { 0x48,0x8b,0xf1,0x49,0x83,0xf8,0x04 };//BasepUpdateProcessParametersField
-	BYTE signaturecode13[] = { 0x66,0x83,0xF8,0x7A };//LoadAppExecutionAliasInfoForExecutable
+	//BYTE signaturecode13[] = { 0x66,0x83,0xF8,0x7A };//LoadAppExecutionAliasInfoForExecutable
 
-	int count2 = 0;
-	PVOID TempAddress2[3] = { 0 };
-	PVOID CreateAppContainerToken = (PVOID)GetProcAddress((HMODULE)KernelBase, "CreateAppContainerToken");
+	PVOID CreateAppContainerToken = (PVOID)GetProcAddress(KernelBase, "CreateAppContainerToken");
 	BasepCreateLowBox = (BasepCreateLowBox_)((char*)CreateAppContainerToken + 9 + *(DWORD*)((char*)CreateAppContainerToken + 5));
 	dprintf(L"[+] Got Unexported BasepCreateLowBox: 0x%p\n", BasepCreateLowBox);
+
+
+	PVOID TempAddress2 = (PVOID)GetProcAddress(KernelBase, "AppPolicyGetShowDeveloperDiagnostic");
+	for (int j = 0 ; j <= 0x100; j++)
+	{
+		PVOID Address = (char*)TempAddress2 + j;
+		if (*(UCHAR*)(Address) == 0xE8 && !memcmp(signaturecode2, (char*)Address + 5, sizeof(signaturecode2)))
+		{
+			Address = (char*)Address + 1;
+			TempAddress2 = (char*)Address + sizeof(ULONG);
+			ULONG RVA = *(ULONG*)Address + (ULONG)(ULONG_PTR)TempAddress2;
+			Address = (PVOID)((ULONG_PTR)RVA + PtrHigh32(TempAddress2));// GetAppModelPolicy
+
+			BYTE TempCode[] = {0x0D,0x00,0x00,0x00,0x10};
+			for (int i = 0; i <= 0x40; i++)
+			{
+				if (!memcmp(TempCode, (char*)Address + i, sizeof(TempCode)))
+				{
+					TempAddress2 = (char*)Address + i;
+					Address = (char*)Address + i - sizeof(ULONG);
+					RVA = *(ULONG*)Address + (ULONG)(ULONG_PTR)TempAddress2;
+					AppModelPolicy_GetPolicy_Internal = (AppModelPolicy_GetPolicy_Internal_)((ULONG_PTR)RVA + PtrHigh32(TempAddress2));
+					dprintf(L"[+] Got Unexported AppModelPolicy_GetPolicy_Internal: 0x%p\n", AppModelPolicy_GetPolicy_Internal);// Warning! Two of AppModelPolicy_GetPolicy_Internal APIs in different address!
+					break;
+				}
+			}
+			break;
+		}
+	}
+
 	for (DWORD i = 0; i < SizeofKernelBase - 0x100; i++)
 	{
-		if (!BasepIsRealtimeAllowed && !memcmp(signaturecode0, (char*)KernelBase + i, sizeof(signaturecode0)))
-		{
-			for (int j = 0x6; j <= 0x18; j++)
-			{
-				if (!memcmp(signaturecode6, (char*)KernelBase + i - j, 3))
-				{
-					BasepIsRealtimeAllowed = (BasepIsRealtimeAllowed_)((char*)KernelBase + i - j + 2);
-					dprintf(L"[+] Got Unexported BasepIsRealtimeAllowed: 0x%p\n", BasepIsRealtimeAllowed);
-					break;
-				}
-			}
-		}
-
-		if (!BasepAdjustApplicationPath && !memcmp(signaturecode1, (char*)KernelBase + i, sizeof(signaturecode1)))
-		{
-			BasepAdjustApplicationPath = (BasepAdjustApplicationPath_)((char*)KernelBase + i);
-			dprintf(L"[+] Got Unexported BasepAdjustApplicationPath: 0x%p\n", BasepAdjustApplicationPath);
-		}
-		if (!AppModelPolicy_GetPolicy_Internal && !memcmp(signaturecode2, (char*)KernelBase + i, 15))
-		{
-			int Flags = 0;
-			BYTE temp1[] = { 0x45,0x33,0xc0,0x33,0xd2 };
-			BYTE temp2[] = { 0x44,0x8b,0xc0,0x3d,0x25,0x02,0x00,0xc0 };
-			for (int j = 0; j <= 10; j++)
-			{
-				if (!memcmp((char*)signaturecode2 + 15, (char*)KernelBase + i + 15 + j, 9))
-				{
-					Flags = 1;
-					break;
-				}
-			}
-			for (int j = 0x30; j <= 0x48 && Flags == 1; j++)
-			{
-				if (!memcmp(temp1, (char*)KernelBase + i + j, sizeof(temp1)))
-				{
-					for (int k = 10; k <= 24; j++)
-					{
-						if (!memcmp(temp2, (char*)KernelBase + i + j + k, sizeof(temp2)))
-						{
-							Flags = 2;
-							AppModelPolicy_GetPolicy_Internal = (AppModelPolicy_GetPolicy_Internal_)((char*)KernelBase + i);
-							dprintf(L"[+] Got Unexported AppModelPolicy_GetPolicy_Internal: 0x%p\n", AppModelPolicy_GetPolicy_Internal);
-							break;
-						}
-					}
-					break;
-				}
-			}
-
-		}
+		
 		if (!memcmp(signaturecode3, (char*)KernelBase + i, 6) && !memcmp((char*)signaturecode3 + 6, (char*)KernelBase + i + 9, 13))
 		{
 			BYTE temp3[] = { 0x48,0x8D,0x54,0x24,0x30,0xC6,0x44,0x24,0x30,0x00,0x48,0x8D,0x0D };
@@ -308,41 +273,61 @@ void GetUnexportFunction(DWORD SizeofKernelBase)
 			for (int j = 0x16; j <= 0x24; j++)
 			{	
 				// 应该换个好点的，正常的方法来获取地址呃呃呃
+				// RtlIsApiSetImplemented
 				if (!memcmp(temp3, (char*)KernelBase + i + j, sizeof(temp3)))
 				{
 					ULONG_PTR Address = (ULONG_PTR)((char*)KernelBase + i + j + 13 + sizeof(ULONG));
 					ULONG RVA = (ULONG)(Address)+ *(ULONG*)((char*)KernelBase + i + j + 13);
 					// (char*)KernelBase + i + j + 17 + *(DWORD*)((char*)KernelBase + i + j + 13)
-					PVOID ApiSetPresenceAddress = (PVOID)((ULONG_PTR)RVA + PtrHigh32(Address));
-					dprintf(L"ApiSetPresenceAddress = 0x%p -- Function = 0x%p\n", ApiSetPresenceAddress, (char*)KernelBase + i);
-					if (!memcmp(ApiSetPresenceAddress, L"DF", 6))
+					PUNICODE_STRING ApiSetPresenceAddress = (PUNICODE_STRING)((ULONG_PTR)RVA + PtrHigh32(Address));
+					//dprintf(L"ApiSetPresenceAddress = 0x%p -- Function = 0x%p\n", ApiSetPresenceAddress, (char*)KernelBase + i);
+					if (!IsCheckAppXPackageBreakawayPresent && ApiSetPresenceAddress->Length == 68 && !memcmp(ApiSetPresenceAddress->Buffer, L"ext-ms-win-appmodel-daxcore-l1-1-0", 68))
 					{
 						IsCheckAppXPackageBreakawayPresent = (ApiSetCheckFunction)((char*)KernelBase + i);
-						dprintf(L"[+] [1] Got Unexported IsCheckAppXPackageBreakawayPresent: 0x%p\n", IsCheckAppXPackageBreakawayPresent);
+						dprintf(L"[+] IsCheckAppXPackageBreakawayPresent: 0x%p\n", IsCheckAppXPackageBreakawayPresent);
 						break;
 					}
-					if (!memcmp(ApiSetPresenceAddress, L"XZ", 6))
+					if (!IsLoadAppExecutionAliasInfoExPresent && ApiSetPresenceAddress->Length == 88 && !memcmp(ApiSetPresenceAddress->Buffer, L"ext-ms-win-appmodel-appexecutionalias-l1-1-0", 88))
 					{
-						TempAddress2[count2] = (char*)KernelBase + i;
-						count2++;
+						IsLoadAppExecutionAliasInfoExPresent = (ApiSetCheckFunction)((char*)KernelBase + i);
+						dprintf(L"[*] IsLoadAppExecutionAliasInfoExPresent: 0x%p\n", IsLoadAppExecutionAliasInfoExPresent);
 						break;
 					}
 
-					if (!IsBasepProcessInvalidImagePresent && !memcmp(ApiSetPresenceAddress, L"TV", 6))
+					if (!IsGetAppExecutionAliasPathPresent && ApiSetPresenceAddress->Length == 88 && !memcmp(ApiSetPresenceAddress->Buffer, L"ext-ms-win-appmodel-appexecutionalias-l1-1-2", 88))
+					{
+						IsGetAppExecutionAliasPathPresent = (ApiSetCheckFunction)((char*)KernelBase + i);
+						dprintf(L"[*] IsGetAppExecutionAliasPathPresent: 0x%p\n", IsGetAppExecutionAliasPathPresent);
+						break;
+					}
+
+					if (!IsGetAppExecutionAliasPathExPresent && ApiSetPresenceAddress->Length == 88 && !memcmp(ApiSetPresenceAddress->Buffer, L"ext-ms-win-appmodel-appexecutionalias-l1-1-5", 88))
+					{
+						IsGetAppExecutionAliasPathExPresent = (ApiSetCheckFunction)((char*)KernelBase + i);
+						dprintf(L"[*] IsGetAppExecutionAliasPathExPresent: 0x%p\n", IsGetAppExecutionAliasPathExPresent);
+						break;
+					}
+
+					if (!IsBasepProcessInvalidImagePresent && ApiSetPresenceAddress->Length == 84 && !memcmp(ApiSetPresenceAddress->Buffer, L"ext-ms-win-kernelbase-processthread-l1-1-0", 84))
 					{
 						IsBasepProcessInvalidImagePresent = (ApiSetCheckFunction)((char*)KernelBase + i);
-						dprintf(L"[+] [3] Got Unexported IsBasepProcessInvalidImagePresent: 0x%p\n", IsBasepProcessInvalidImagePresent);
+						dprintf(L"[+] IsBasepProcessInvalidImagePresent: 0x%p\n", IsBasepProcessInvalidImagePresent);
 						break;
 					}
 
+					if (!IsBasepProcessInvalidImagePresent && ApiSetPresenceAddress->Length == 84 && !memcmp(ApiSetPresenceAddress->Buffer, L"ext-ms-win-kernelbase-processthread-l1-1-2", 84))
+					{
+						IsBasepGetPackagedAppInfoForFilePresent = (ApiSetCheckFunction)((char*)KernelBase + i);
+						dprintf(L"[+] IsBasepGetPackagedAppInfoForFilePresent: 0x%p\n", IsBasepGetPackagedAppInfoForFilePresent);
+						break;
+					}
 				}
 			}
 		}
-		if (!ValidateAppXAliasFallback && !memcmp(signaturecode4, (char*)KernelBase + i, sizeof(signaturecode4)))
-		{
-			ValidateAppXAliasFallback = (ValidateAppXAliasFallback_)((char*)KernelBase + i);
-			dprintf(L"[+] Got Unexported ValidateAppXAliasFallback: 0x%p\n", ValidateAppXAliasFallback);
-		}
+		if (!IsBasepGetPackagedAppInfoForFilePresent)
+			IsBasepGetPackagedAppInfoForFilePresent = IsBasepProcessInvalidImagePresent;
+		if (!IsGetAppExecutionAliasPathExPresent)
+			IsGetAppExecutionAliasPathExPresent = IsBasepProcessInvalidImagePresent;
 		
 		if (!BasepConvertWin32AttributeList_inline &&  !memcmp(signaturecode5, (char*)KernelBase + i, sizeof(signaturecode5)))
 		{
@@ -367,34 +352,7 @@ void GetUnexportFunction(DWORD SizeofKernelBase)
 
 			i += 0x100;
 		}
-
-		if (!BasepFreeBnoIsolationParameter && !memcmp(signaturecode6, (char*)KernelBase + i, sizeof(signaturecode6)))
-		{
-			BasepFreeBnoIsolationParameter = (BasepFreeBnoIsolationParameter_)((char*)KernelBase + i + 2);
-			dprintf(L"[+] Got Unexported BasepFreeBnoIsolationParameters: 0x%p\n", BasepFreeBnoIsolationParameter);
-		}
-		if (!BasepAddToOrUpdateAttributesList && !memcmp(signaturecode7, (char*)KernelBase + i, sizeof(signaturecode7)))
-		{
-			BasepAddToOrUpdateAttributesList = (BasepAddToOrUpdateAttributesList_)((char*)KernelBase + i + 1);
-			dprintf(L"[+] Got Unexported BasepAddToOrUpdateAttributesList: 0x%p\n", BasepAddToOrUpdateAttributesList);
-		}
-		if (!BasepCreateBnoIsolationObjectDirectories && !memcmp(signaturecode8, (char*)KernelBase + i, sizeof(signaturecode8)))
-		{
-			BasepCreateBnoIsolationObjectDirectories = (BasepCreateBnoIsolationObjectDirectories_)((char*)KernelBase + i + 1);
-			dprintf(L"[+] Got Unexported BasepCreateBnoIsolationObjectDirectories: 0x%p\n", BasepCreateBnoIsolationObjectDirectories);
-		}
-		if (!BasepCreateProcessParameters && !memcmp(signaturecode9, (char*)KernelBase + i, sizeof(signaturecode9)))
-		{
-			for (int j = 0; j <= 0x18; j++)
-			{
-				if (!memcmp(signaturecode6, (char*)KernelBase + i - j, 2))
-				{
-					BasepCreateProcessParameters = (BasepCreateProcessParameters_)((char*)KernelBase + i - j + 2);
-					dprintf(L"[+] Got Unexported BasepCreateProcessParameters: 0x%p\n", BasepCreateProcessParameters);
-					break;
-				}
-			}
-		}
+		
 		if (!BuildSubSysCommandLine && !memcmp(signaturecode10, (char*)KernelBase + i, sizeof(signaturecode10)))
 		{
 			for (int j = 0; j <= 0x24; j++)
@@ -420,18 +378,8 @@ void GetUnexportFunction(DWORD SizeofKernelBase)
 				}
 			}
 		}
-		if (!BasepUpdateProcessParametersField && !memcmp(signaturecode12, (char*)KernelBase + i, sizeof(signaturecode12)))
-		{
-			for (int j = 0; j <= 0x24; j++)
-			{
-				if (!memcmp(signaturecode6, (char*)KernelBase + i - j, 2))
-				{
-					BasepUpdateProcessParametersField = (BasepUpdateProcessParametersField_)((char*)KernelBase + i - j + 2);
-					dprintf(L"[+] Got Unexported BasepUpdateProcessParametersField: 0x%p\n", BasepUpdateProcessParametersField);
-					break;
-				}
-			}
-		}
+		
+		/*
 		if (OSBuildNumber >= 21313 && !LoadAppExecutionAliasInfoForExecutable && !memcmp(signaturecode13, (char*)KernelBase + i, sizeof(signaturecode13)))
 		{
 			for (int j = 0; j <= 0x80; j++)
@@ -445,12 +393,11 @@ void GetUnexportFunction(DWORD SizeofKernelBase)
 			}
 
 		}
+		*/
 	}
 
-	IsGetAppExecutionAliasPathPresent = (ApiSetCheckFunction)TempAddress2[0];
-	IsLoadAppExecutionAliasInfoExPresent = (ApiSetCheckFunction)TempAddress2[1];
-	dprintf(L"[*] IsGetAppExecutionAliasPathPresent: 0x%p\n", IsGetAppExecutionAliasPathPresent);
-	dprintf(L"[*] IsLoadAppExecutionAliasInfoExPresent: 0x%p\n", IsLoadAppExecutionAliasInfoExPresent);
+	
+	
 
 }
 BOOL SW3_PopulateSyscallList()
@@ -625,6 +572,12 @@ EXTERN_C PVOID SW3_GetRandomSyscallAddress(DWORD FunctionHash)
 	return SW3_SyscallList.Entries[index].SyscallAddress;
 }
 
+
+void init2()
+{
+	HMODULE ntvdm = LoadLibraryW(L"ntvdm64.dll");
+	NtVdm64CreateProcessInternalW = ntvdm ? (NtVdm64CreateProcessInternalW_)GetProcAddress(ntvdm, "NtVdm64CreateProcessInternalW") : NULL;
+}
 void init()
 {
 	SW3_PopulateSyscallList();//Init  ovo..
@@ -637,6 +590,9 @@ void init()
 		CheckAppXPackageBreakaway = (CheckAppXPackageBreakaway_)GetProcAddress(daxexec, "CheckAppXPackageBreakaway");
 		LoadAppExecutionAliasInfoEx = (LoadAppExecutionAliasInfoEx_)GetProcAddress(AppExecutionAlias, "LoadAppExecutionAliasInfoEx");
 		GetAppExecutionAliasPath = (GetAppExecutionAliasPath_)GetProcAddress(AppExecutionAlias, "GetAppExecutionAliasPath");
+		GetAppExecutionAliasPathEx = (GetAppExecutionAliasPathEx_)GetProcAddress(AppExecutionAlias, "GetAppExecutionAliasPathEx");
+
+		CompletePackagedProcessCreationEx = (CompletePackagedProcessCreationEx_)GetProcAddress(AppExecutionAlias, "CompletePackagedProcessCreationEx");
 		CompleteAppExecutionAliasProcessCreationEx = (CompleteAppExecutionAliasProcessCreationEx_)GetProcAddress(AppExecutionAlias, "CompleteAppExecutionAliasProcessCreationEx");
 		PerformAppxLicenseRundownEx = (PerformAppxLicenseRundownEx_)GetProcAddress(AppExecutionAlias, "PerformAppxLicenseRundownEx");
 		FreeAppExecutionAliasInfoEx = (FreeAppExecutionAliasInfoEx_)GetProcAddress(AppExecutionAlias, "FreeAppExecutionAliasInfoEx");
@@ -646,30 +602,6 @@ void init()
 	{
 		wprintf(L"[-] Error in Module Load...\n");
 	}
-	CsrCaptureMessageMultiUnicodeStringsInPlace = (CsrCaptureMessageMultiUnicodeStringsInPlace_)GetProcAddress(Ntdll, "CsrCaptureMessageMultiUnicodeStringsInPlace");
-	CsrClientCallServer = (CsrClientCallServer_)GetProcAddress(Ntdll, "CsrClientCallServer");
-	DbgUiConnectToDbg = (DbgUiConnectToDbg_)GetProcAddress(Ntdll, "DbgUiConnectToDbg");
-	DbgUiGetThreadDebugObject = (DbgUiGetThreadDebugObject_)GetProcAddress(Ntdll, "DbgUiGetThreadDebugObject");
-	RtlSetLastWin32Error = (RtlSetLastWin32Error_)GetProcAddress(Ntdll, "RtlSetLastWin32Error");
-	RtlGetExePath = (RtlGetExePath_)GetProcAddress(Ntdll, "RtlGetExePath");
-	RtlReleasePath = (RtlReleasePath_)GetProcAddress(Ntdll, "RtlReleasePath");
-	RtlInitUnicodeString = (RtlInitUnicodeString_)GetProcAddress(Ntdll, "RtlInitUnicodeString");
-	RtlInitUnicodeStringEx = (RtlInitUnicodeStringEx_)GetProcAddress(Ntdll, "RtlInitUnicodeStringEx");
-	RtlFreeUnicodeString = (RtlFreeUnicodeString_)GetProcAddress(Ntdll, "RtlFreeUnicodeString");
-	RtlDosPathNameToNtPathName_U = (RtlDosPathNameToNtPathName_U_)GetProcAddress(Ntdll, "RtlDosPathNameToNtPathName_U");
-	RtlDetermineDosPathNameType_U = (RtlDetermineDosPathNameType_U_)GetProcAddress(Ntdll, "RtlDetermineDosPathNameType_U");
-	RtlGetFullPathName_UstrEx = (RtlGetFullPathName_UstrEx_)GetProcAddress(Ntdll, "RtlGetFullPathName_UstrEx");
-	RtlIsDosDeviceName_U = (RtlIsDosDeviceName_U_)GetProcAddress(Ntdll, "RtlIsDosDeviceName_U");
-	RtlAllocateHeap = (RtlAllocateHeap_)GetProcAddress(Ntdll, "RtlAllocateHeap");
-	RtlFreeHeap = (RtlFreeHeap_)GetProcAddress(Ntdll, "RtlFreeHeap");
-	RtlCreateEnvironmentEx = (RtlCreateEnvironmentEx_)GetProcAddress(Ntdll, "RtlCreateEnvironmentEx");
-	RtlImageNtHeader = (RtlImageNtHeader_)GetProcAddress(Ntdll, "RtlImageNtHeader");
-	RtlDestroyEnvironment = (RtlDestroyEnvironment_)GetProcAddress(Ntdll, "RtlDestroyEnvironment");
-	RtlWow64GetProcessMachines = (RtlWow64GetProcessMachines_)GetProcAddress(Ntdll, "RtlWow64GetProcessMachines");
-	RtlDestroyProcessParameters = (RtlDestroyProcessParameters_)GetProcAddress(Ntdll, "RtlDestroyProcessParameters");
-	LdrQueryImageFileKeyOption = (LdrQueryImageFileKeyOption_)GetProcAddress(Ntdll, "LdrQueryImageFileKeyOption");
-	RtlGetVersion = (RtlGetVersion_)GetProcAddress(Ntdll, "RtlGetVersion");
-	CsrFreeCaptureBuffer = (CsrFreeCaptureBuffer_)GetProcAddress(Ntdll, "CsrFreeCaptureBuffer");
 
 	KernelBaseGetGlobalData = (KernelBaseGetGlobalData_)GetProcAddress(KernelBase, "KernelBaseGetGlobalData");
 	BaseFormatObjectAttributes = (BaseFormatObjectAttributes_)GetProcAddress(KernelBase, "BaseFormatObjectAttributes");
@@ -677,6 +609,9 @@ void init()
 
 	BaseSetLastNTError = (BaseSetLastNTError_)GetProcAddress(Kernel32, "BaseSetLastNTError");
 	BasepAppXExtension = (BasepAppXExtension_)GetProcAddress(Kernel32, "BasepAppXExtension");
+	BasepGetPackagedAppInfoForFile = (BasepGetPackagedAppInfoForFile_)GetProcAddress(Kernel32, "BasepGetPackagedAppInfoForFile");
+	BasepReleasePackagedAppInfo = (BasepReleasePackagedAppInfo_)GetProcAddress(Kernel32, "BasepReleasePackagedAppInfo");
+
 	BasepConstructSxsCreateProcessMessage = (BasepConstructSxsCreateProcessMessage_)GetProcAddress(Kernel32, "BasepConstructSxsCreateProcessMessage");
 	BasepAppContainerEnvironmentExtension = (BasepAppContainerEnvironmentExtension_)GetProcAddress(Kernel32, "BasepAppContainerEnvironmentExtension");
 	BasepFreeAppCompatData = (BasepFreeAppCompatData_)GetProcAddress(Kernel32, "BasepFreeAppCompatData");
@@ -695,10 +630,14 @@ void init()
 	BaseWriteErrorElevationRequiredEvent = (BaseWriteErrorElevationRequiredEvent_)GetProcAddress(Kernel32, "BaseWriteErrorElevationRequiredEvent");
 	BaseCheckElevation = (BaseCheckElevation_)GetProcAddress(Kernel32, "BaseCheckElevation");
 	BasepGetPackageActivationTokenForSxS = (BasepGetPackageActivationTokenForSxS_)GetProcAddress(Kernel32, "BasepGetPackageActivationTokenForSxS");
+	
+	BasepGetPackageActivationTokenForSxS2 = (BasepGetPackageActivationTokenForSxS2_)GetProcAddress(Kernel32, "BasepGetPackageActivationTokenForSxS2");
+
 	BaseElevationPostProcessing = (BaseElevationPostProcessing_)GetProcAddress(Kernel32, "BaseElevationPostProcessing");
 	BasepPostSuccessAppXExtension = (BasepPostSuccessAppXExtension_)GetProcAddress(Kernel32, "BasepPostSuccessAppXExtension");
 	BasepFinishPackageActivationForSxS = (BasepFinishPackageActivationForSxS_)GetProcAddress(Kernel32, "BasepFinishPackageActivationForSxS");
 	BaseDestroyVDMEnvironment = (BaseDestroyVDMEnvironment_)GetProcAddress(Kernel32, "BaseDestroyVDMEnvironment");
+
 
 	IsBasepConstructSxsCreateProcessMessagePresent = IsBasepProcessInvalidImagePresent;
 	IsBasepInitAppCompatDataPresent = IsBasepProcessInvalidImagePresent;
@@ -723,155 +662,3 @@ void init()
 	RtlSetLastWin32Error(0);
 }
 
-NTSTATUS ValidateAppExecutionAliasRedirectPackageIdentity(HANDLE KeyHandle, ExtendedAppExecutionAliasInfo_New* AppExecutionAliasInfo)
-{
-	NTSTATUS Status; // ebx
-	//wchar_t* i; // rcx
-	wchar_t* SplitBuffer; // rax
-	ULONG ReturnedLength; // [rsp+30h] [rbp-B8h] BYREF
-	wchar_t* Context; // [rsp+38h] [rbp-B0h] BYREF
-	WCHAR Buffer[72] = { 0 }; // [rsp+40h] [rbp-A8h] BYREF
-
-	Status = LdrQueryImageFileKeyOption(KeyHandle, L"AppExecutionAliasRedirectPackages", REG_SZ, Buffer, 130, &ReturnedLength);
-	Buffer[64] = 0;
-	if (!NT_SUCCESS(Status))
-		return Status;
-	if (ReturnedLength >= 4)
-	{
-		if (Buffer[0] == '*' && !Buffer[1])
-		{
-			return 0;
-		}
-		else
-		{
-			Status = STATUS_ACCESS_DENIED;
-			Context = 0;
-			SplitBuffer = wcstok_s(Buffer, L";", &Context);
-
-			while (SplitBuffer)
-			{
-				SplitBuffer = wcstok_s(NULL, L";", &Context);
-				if (CompareStringOrdinal(SplitBuffer, -1, AppExecutionAliasInfo->AppExecutionAliasRedirectPackages, -1, 1) == CSTR_EQUAL)
-					return STATUS_SUCCESS;
-			}
-		}
-	}
-	else
-	{
-		Status = STATUS_ACCESS_DENIED;
-	}
-	return Status;
-}
-
-#define tempargcount (24 - 11)
-
-NTSTATUS  BasepConvertWin32AttributeList(
-	LPPROC_THREAD_ATTRIBUTE_LIST lpAttributeList,
-	BOOLEAN ConvertType, //BOOLEAN IsCreateThread
-	PULONG ExtendedFlags,
-	PUNICODE_STRING PackageFullName,
-	PSECURITY_CAPABILITIES* SecurityCapabilities,
-	BOOLEAN* HasHandleList,
-	PHANDLE ParentProcessHandle,
-	CONSOLE_REFERENCE* ConsoleHandleInfo,
-	PPS_MITIGATION_OPTIONS_MAP MitigationOptions,
-	PPS_MITIGATION_AUDIT_OPTIONS_MAP MitigationAuditOptions,
-	PWIN32K_SYSCALL_FILTER Win32kFilter,//11
-	...
-)
-{
-	// I know this is unsafe...
-	// Not tested yet!
-	va_list vargument;
-	va_start(vargument, Win32kFilter);
-
-	//wprintf(L"[+] va_arg: 0x%llx\n", va_arg(vargument, ULONG_PTR));
-	PVOID VArgument[tempargcount] = { 0 }; //13
-	RtlSecureZeroMemory(VArgument, sizeof(VArgument));
-	BOOL FsctlMitigationEnabled =  FALSE;
-	// 找不到特征码的无奈
-	// 对于 Windows 11 21H2 来说
-	if (OSBuildNumber < 25295 || NtdllRevision)
-	{
-		if (OSBuildNumber < 19090 && NtdllRevision >= 3636)		// [10.0.19041.3636]
-		{
-			FsctlMitigationEnabled = TRUE;
-		}
-		else if(OSBuildNumber <= 22000 && NtdllRevision >= 2600)// [10.0.22000.2538] 当且仅当2023/11 开始出现 [10.0.22000.2600] 
-		{
-			FsctlMitigationEnabled = TRUE;
-		}
-		else if(OSBuildNumber <= 22621 && NtdllRevision > 2134)	// [10.0.22621.2134]
-		{
-			FsctlMitigationEnabled = TRUE;
-		}
-	}
-	else
-	{
-		FsctlMitigationEnabled = TRUE;
-	}
-
-	int i = 0;
-
-	PVOID TempArgument = va_arg(vargument, PVOID);
-	if (FsctlMitigationEnabled)
-	{
-		VArgument[i++] = TempArgument;//FsctlMitigationEnabled 还没想到一个完美的方案
-		wprintf(L"[!] FsctlMitigation Enabled!\n");
-	}
-	
-	TempArgument = va_arg(vargument, PVOID);
-	if (OSBuildNumber >= 19090 || (NtdllRevision && NtdllRevision >= 1202))
-	{
-		VArgument[i++] = TempArgument;//ComponentFilter
-	}
-	//wprintf(L"[!] NtdllRevision: %hd\n", NtdllRevision);
-
-	for (int j = 0; j < 6; j++)
-	{
-		VArgument[i++] = va_arg(vargument, PVOID);
-	}
-
-	TempArgument = va_arg(vargument, PVOID);
-	if (OSBuildNumber > 22000)// > 22000
-	{
-		VArgument[i++] = TempArgument;//TrustletAttributes
-	}
-	TempArgument = va_arg(vargument, PVOID);
-	if (OSBuildNumber >= 21313)
-	{
-		VArgument[i++] = TempArgument;//ProcessFlags
-	}
-
-	VArgument[i++] = va_arg(vargument, PVOID);
-
-	VArgument[i++] = va_arg(vargument, PVOID);
-	VArgument[i++] = va_arg(vargument, PVOID);//extra, optional
-
-	va_end(vargument);
-	return BasepConvertWin32AttributeList_inline(
-		lpAttributeList,
-		0,
-		ExtendedFlags,
-		PackageFullName,
-		SecurityCapabilities,
-		HasHandleList,
-		ParentProcessHandle,		// PSEUDOCONSOLE_INHERIT_CURSOR ?
-		ConsoleHandleInfo,			// CONSOLE_HANDLE_INFO   //IN ProcessParameters ?<- CONSOLE_IGNORE_CTRL_C = 0x1// ? = 0x2// ? = 0x4 ???
-		MitigationOptions,			// PS_MITIGATION_OPTIONS_MAP 
-		MitigationAuditOptions,		// PS_MITIGATION_AUDIT_OPTIONS_MAP
-		Win32kFilter,				// WIN32K_SYSCALL_FILTER //12
-		VArgument[0],
-		VArgument[1],				// int // ULONG ComponentFilter
-		VArgument[2],				// MAXVERSIONTESTED_INFO ???
-		VArgument[3],				// PS_BNO_ISOLATION_PARAMETERS
-		VArgument[4],				// DWORD (PROCESS_CREATION_DESKTOP_APP_*)
-		VArgument[5],				// in ISOLATION_MANIFEST_PROPERTIES* // rev (diversenok) // since 19H2+
-		VArgument[6],
-		VArgument[7],
-		VArgument[8],			
-		VArgument[9],
-		VArgument[10],
-		VArgument[11],
-		VArgument[12]);				// ProcThreadAttributeMax OPTIONAL
-}
