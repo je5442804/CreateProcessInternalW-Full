@@ -2470,7 +2470,7 @@ BOOL WINAPI CreateProcessInternalW(
 			}
 			wprintf(L"[*] Remote PackageDependencyData Updated: 0x%p\n", AppXProcessContext->RemoteBaseAddress);
 		}
-		ActivationFlag = FALSE;
+		ActivationFlag = 0;
 		if(lpExtendedPackagedAppContext)
 		{
 			if (lpExtendedPackagedAppContext->AppType != GeneralUWPApp)
