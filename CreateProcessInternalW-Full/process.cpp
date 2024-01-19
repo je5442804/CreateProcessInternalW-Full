@@ -1294,10 +1294,10 @@ BOOL WINAPI CreateProcessInternalW(
 		{
 			ProcessParameters->Flags |= RTL_USER_PROC_APPX_GLOBAL_OVERRIDE;
 		}
-		if (AppExecutionAliasInfo && !lpCurrentDirectory)
+		if (AppExecutionAliasInfo || (lpExtendedPackagedAppContext && lpExtendedPackagedAppContext->IsAppExecutionAliasType == TRUE) && !lpCurrentDirectory)
 		{
 			DosPathLength = ProcessParameters->CurrentDirectory.DosPath.Length;
-			PWSTR TempHeap = (PWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, (SIZE_T)DosPathLength + 2);
+			PWSTR TempHeap = (PWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, (SIZE_T)DosPathLength + sizeof(UNICODE_NULL));
 			CurrentDirectoryHeap = TempHeap;
 			if (!TempHeap)
 			{
@@ -1305,7 +1305,7 @@ BOOL WINAPI CreateProcessInternalW(
 				bStatus = FALSE;
 				goto Leave_Cleanup;
 			}
-			StringCbCopyW(TempHeap, DosPathLength + sizeof(WCHAR), ProcessParameters->CurrentDirectory.DosPath.Buffer);
+			StringCbCopyW(TempHeap, DosPathLength + sizeof(UNICODE_NULL), ProcessParameters->CurrentDirectory.DosPath.Buffer);
 			lpCurrentDirectory = TempHeap;
 		}
 
@@ -1453,7 +1453,7 @@ BOOL WINAPI CreateProcessInternalW(
 						CurrentTokenHandle = lpExtendedPackagedAppContext->ActivationTokenInfo.ActivationTokenHandle;
 						RtlInitUnicodeString(&PackageFullName, lpExtendedPackagedAppContext->PackageFullName);
 
-						PackageCommandLineLength = 2 * wcslen(lpCommandLine) + 2;
+						PackageCommandLineLength = sizeof(WCHAR) * wcslen(lpCommandLine) + 2;
 						PackageNewCommandLine = (PWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, PackageCommandLineLength);
 						if (!PackageNewCommandLine)//???
 							break;
@@ -1760,7 +1760,7 @@ BOOL WINAPI CreateProcessInternalW(
 			IFEOKey = CreateInfo.ExeName.IFEOKey;
 			if (!ImageFileDebuggerCommand)
 			{
-				ImageFileDebuggerCommand = (PWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(WCHAR) * MAX_PATH + 2);
+				ImageFileDebuggerCommand = (PWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(WCHAR) * MAX_PATH + sizeof(UNICODE_NULL));
 				if (!ImageFileDebuggerCommand)
 				{
 					NtClose(IFEOKey);
