@@ -1294,7 +1294,7 @@ BOOL WINAPI CreateProcessInternalW(
 		{
 			ProcessParameters->Flags |= RTL_USER_PROC_APPX_GLOBAL_OVERRIDE;
 		}
-		if (AppExecutionAliasInfo || (lpExtendedPackagedAppContext && lpExtendedPackagedAppContext->IsAppExecutionAliasType == TRUE) && !lpCurrentDirectory)
+		if ((AppExecutionAliasInfo || (lpExtendedPackagedAppContext && lpExtendedPackagedAppContext->IsAppExecutionAliasType == TRUE)) && !lpCurrentDirectory)
 		{
 			DosPathLength = ProcessParameters->CurrentDirectory.DosPath.Length;
 			PWSTR TempHeap = (PWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, (SIZE_T)DosPathLength + sizeof(UNICODE_NULL));
