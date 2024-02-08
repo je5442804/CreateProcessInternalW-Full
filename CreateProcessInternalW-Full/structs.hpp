@@ -4246,7 +4246,7 @@ typedef struct _APPCOMPAT_EXE_DATA {
 	ULONG dwMachine;							//+0x214
 	SDBQUERYRESULT SdbQueryResult;				//+0x218
 
-	ASL_LOG_ENTRY AslLogEntry[11];				//+0x3e0  as it was on win 8  SepApplyDebugPolicy struct _ASL_LOG *g_ShimDebugLog/AslLogCreate/AslLogPublishToPeb
+	ASL_LOG_ENTRY AslLogEntry[11];				//+0x3e0  as it was on win 8 SepApplyDebugPolicy struct _ASL_LOG *g_ShimDebugLog/AslLogCreate/AslLogPublishToPeb
 	ULONG AslReserved1;							//+0x7d4
 	ULONGLONG AslReserved2;						//+0x7d8
 				
@@ -4349,7 +4349,6 @@ typedef enum {
 //FIX_FLAG
 typedef struct _APPCOAMPAT_FLAG_LUA
 {
-
 	struct
 	{
 		UCHAR RunAsInvoker : 1;				// 应用程序应使用与父进程相同的 Windows 权限和用户权限运行。此设置相当于没有应用程序的应用程序兼容性数据库。应用程序以与启动它的父进程相同的权限启动，这减少了应用程序的安全风险。这是因为对于大多数应用程序来说，父级是 Explorer.exe，它作为标准用户应用程序运行。从以完全管理员身份运行的 cmd.exe shell 启动的 RunAsInvoker 应用程序将使用完全管理员访问令牌“以调用者身份运行”。
