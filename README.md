@@ -2,7 +2,7 @@
 Reimplement CreateProcessInternalW via Windows 10 20H1+ and Windows 11.   
 Base on [__NtCreateUserProcess-Post__](https://github.com/je5442804/NtCreateUserProcess-Post)  
   
-__Explorer Attack Surface and the New Techniques relate to this as far as you can,__  
+__Explore Attack Surface and the New Techniques relate to this as far as you can,__  
 __or it's useless for you.__  
 
 ## Tested on (x64 only)  
@@ -21,21 +21,21 @@ Visual Studio 2022
 __Relase x64__  
 
 ## Tips
-In recent years Qihoo 360 has make a great defense in "ProcessAttack Protection"  
+In recent years, Qihoo 360 has made a great defense in "ProcessAttack Protection"  
 With the Core Crystal Protection Engine (Intel VT / AMD-V) 360 make the Process Detection Powerful.  
-~~It's seem that public techniques of Process Injection already be killed, No universal techniques to bypasss.~~  
-~~(Some uncommon technique bypass it, but huge limition...)~~  
+~~It seems that public techniques of Process Injection already be killed, no universal techniques to bypass.~~  
+~~(Some uncommon techniques bypass it, but huge limitations...)~~  
 
-Someone try to use VM Environment spoof or Incompatible Drivers to make a fool of 360,  
+Someone tries to use VM Environment spoof or Incompatible Drivers to make a fool of 360,  
 which enforce to disable or adjust Core Crystal Engine by 360Safe itself.  
-Yeah, there is no way to bypass the Behavior Detection: "I'm just afraid of your detect, shutdown your Core Crystal Engine lol :(".  
+Yeah, there is no way to bypass the Behavior Detection: "I'm just afraid of your detection, shutdown your Core Crystal Engine lol :(".  
 
 This technique isn't good enough, what if I say that:  
-at least two universal, undisclosed, different types technologies (probably work well before Vista or not?) completely bypass Behavior Detection to  
+at least two universal, undisclosed, different types of technologies (probably work well before Vista or not?) completely bypass Behavior Detection to  
 inject Remote Process when Core Crystal Engine is running normally.  
 Both of them work well on Windows Vista to Windows 11.  
   
-(perhaps it's less related my repo?)  Ovo?  
+(perhaps it's less related to the repo?)  Ovo?  
 (What does it mean that bypass Qihoo 360 Process Inject Detection base on Core Crystal Engine?)  
 __OMG! The others' amazingly different research [PoolParty](https://github.com/SafeBreach-Labs/PoolParty) should be respected!__  
   
@@ -99,5 +99,3 @@ Special Thank to MeeSong for his [__Excellent Project__](https://github.com/MeeS
 70: https://www.matteomalvica.com/blog/2021/03/10/practical-re-win-solutions-ch3-work-items/  
 71: https://bbs.kanxue.com/thread-270131.htm  
 72: https://www.mandiant.com/resources/blog/finding-evil-in-windows-ten-compressed-memory-part-one 内存压缩  
-
-2024 Already in place  
