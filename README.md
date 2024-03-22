@@ -6,7 +6,9 @@ __Explore Attack Surface and the New Techniques relate to this as far as you can
 __or it's useless for you.__  
 
 ## Tested on (x64 only)  
-Windows 11 21H2 x64 (22000.795/22000.1098)  
+Windows 11 24H2 x64 (26085.1)  **Preview**  
+Windows 11 23H2 x64 (22631.3296)  
+Windows 11 21H2 x64 (22000.795/22000.1098/22000.2600)  
 Windows 10 22H2 x64 (19045.2130)  
 Windows 10 21H2 x64 (19044.1826)  
 
