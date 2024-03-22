@@ -7,6 +7,7 @@
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 #define IS_WIN32_HRESULT(x)	(((x) & 0xFFFF0000) == 0x80070000)
 #define WIN32_FROM_HRESULT(hr)		(0x0000FFFF & (hr))
+#define leave __leave
 
 #define PtrHigh32(x) (ULONGLONG)((ULONGLONG)x & 0xFFFFFFFF00000000)
 #define WOW64_POINTER(Type) ULONG
@@ -1427,15 +1428,7 @@ typedef struct _TOKEN_SECURITY_ATTRIBUTES_INFORMATION
 	} Attribute;
 } TOKEN_SECURITY_ATTRIBUTES_INFORMATION, * PTOKEN_SECURITY_ATTRIBUTES_INFORMATION;
 
-typedef struct _FILE_IO_COMPLETION_INFORMATION
-{
-	PVOID           KeyContext;
-	PVOID           ApcContext;
-	IO_STATUS_BLOCK IoStatusBlock;
-} FILE_IO_COMPLETION_INFORMATION, * PFILE_IO_COMPLETION_INFORMATION;
-
 typedef PVOID PT2_CANCEL_PARAMETERS;
-
 
 typedef struct _OBJECT_NAME_INFORMATION
 {
@@ -1491,84 +1484,97 @@ typedef struct _FILE_ID_INFORMATION
 	FILE_ID_128 FileId;//8 GUID -> 16
 } FILE_ID_INFORMATION, * PFILE_ID_INFORMATION;//24
 
+// private
+typedef struct _FILE_IO_COMPLETION_INFORMATION
+{
+	PVOID KeyContext;
+	PVOID ApcContext;
+	IO_STATUS_BLOCK IoStatusBlock;
+} FILE_IO_COMPLETION_INFORMATION, * PFILE_IO_COMPLETION_INFORMATION;
+
 typedef enum _FILE_INFORMATION_CLASS
 {
-	FileDirectoryInformation = 1, // FILE_DIRECTORY_INFORMATION
-	FileFullDirectoryInformation, // FILE_FULL_DIR_INFORMATION
-	FileBothDirectoryInformation, // FILE_BOTH_DIR_INFORMATION
-	FileBasicInformation, // FILE_BASIC_INFORMATION
-	FileStandardInformation, // FILE_STANDARD_INFORMATION
-	FileInternalInformation, // FILE_INTERNAL_INFORMATION
-	FileEaInformation, // FILE_EA_INFORMATION
-	FileAccessInformation, // FILE_ACCESS_INFORMATION
-	FileNameInformation, // FILE_NAME_INFORMATION
-	FileRenameInformation, // FILE_RENAME_INFORMATION // 10
-	FileLinkInformation, // FILE_LINK_INFORMATION
-	FileNamesInformation, // FILE_NAMES_INFORMATION
-	FileDispositionInformation, // FILE_DISPOSITION_INFORMATION
-	FilePositionInformation, // FILE_POSITION_INFORMATION
+	FileDirectoryInformation = 1, // q: FILE_DIRECTORY_INFORMATION (requires FILE_LIST_DIRECTORY) (NtQueryDirectoryFile[Ex])
+	FileFullDirectoryInformation, // q: FILE_FULL_DIR_INFORMATION (requires FILE_LIST_DIRECTORY) (NtQueryDirectoryFile[Ex])
+	FileBothDirectoryInformation, // q: FILE_BOTH_DIR_INFORMATION (requires FILE_LIST_DIRECTORY) (NtQueryDirectoryFile[Ex])
+	FileBasicInformation, // q; s: FILE_BASIC_INFORMATION (q: requires FILE_READ_ATTRIBUTES; s: requires FILE_WRITE_ATTRIBUTES)
+	FileStandardInformation, // q: FILE_STANDARD_INFORMATION, FILE_STANDARD_INFORMATION_EX
+	FileInternalInformation, // q: FILE_INTERNAL_INFORMATION
+	FileEaInformation, // q: FILE_EA_INFORMATION
+	FileAccessInformation, // q: FILE_ACCESS_INFORMATION
+	FileNameInformation, // q: FILE_NAME_INFORMATION
+	FileRenameInformation, // s: FILE_RENAME_INFORMATION (requires DELETE) // 10
+	FileLinkInformation, // s: FILE_LINK_INFORMATION
+	FileNamesInformation, // q: FILE_NAMES_INFORMATION (requires FILE_LIST_DIRECTORY) (NtQueryDirectoryFile[Ex])
+	FileDispositionInformation, // s: FILE_DISPOSITION_INFORMATION (requires DELETE)
+	FilePositionInformation, // q; s: FILE_POSITION_INFORMATION
 	FileFullEaInformation, // FILE_FULL_EA_INFORMATION
-	FileModeInformation, // FILE_MODE_INFORMATION
-	FileAlignmentInformation, // FILE_ALIGNMENT_INFORMATION
-	FileAllInformation, // FILE_ALL_INFORMATION
-	FileAllocationInformation, // FILE_ALLOCATION_INFORMATION
-	FileEndOfFileInformation, // FILE_END_OF_FILE_INFORMATION // 20
-	FileAlternateNameInformation, // FILE_NAME_INFORMATION
-	FileStreamInformation, // FILE_STREAM_INFORMATION
-	FilePipeInformation, // FILE_PIPE_INFORMATION
-	FilePipeLocalInformation, // FILE_PIPE_LOCAL_INFORMATION
-	FilePipeRemoteInformation, // FILE_PIPE_REMOTE_INFORMATION
-	FileMailslotQueryInformation, // FILE_MAILSLOT_QUERY_INFORMATION
-	FileMailslotSetInformation, // FILE_MAILSLOT_SET_INFORMATION
-	FileCompressionInformation, // FILE_COMPRESSION_INFORMATION
-	FileObjectIdInformation, // FILE_OBJECTID_INFORMATION
-	FileCompletionInformation, // FILE_COMPLETION_INFORMATION // 30
-	FileMoveClusterInformation, // FILE_MOVE_CLUSTER_INFORMATION
-	FileQuotaInformation, // FILE_QUOTA_INFORMATION
-	FileReparsePointInformation, // FILE_REPARSE_POINT_INFORMATION
-	FileNetworkOpenInformation, // FILE_NETWORK_OPEN_INFORMATION
-	FileAttributeTagInformation, // FILE_ATTRIBUTE_TAG_INFORMATION
-	FileTrackingInformation, // FILE_TRACKING_INFORMATION
-	FileIdBothDirectoryInformation, // FILE_ID_BOTH_DIR_INFORMATION
-	FileIdFullDirectoryInformation, // FILE_ID_FULL_DIR_INFORMATION
-	FileValidDataLengthInformation, // FILE_VALID_DATA_LENGTH_INFORMATION
-	FileShortNameInformation, // FILE_NAME_INFORMATION // 40
-	FileIoCompletionNotificationInformation, // FILE_IO_COMPLETION_NOTIFICATION_INFORMATION // since VISTA
-	FileIoStatusBlockRangeInformation, // FILE_IOSTATUSBLOCK_RANGE_INFORMATION
-	FileIoPriorityHintInformation, // FILE_IO_PRIORITY_HINT_INFORMATION, FILE_IO_PRIORITY_HINT_INFORMATION_EX
-	FileSfioReserveInformation, // FILE_SFIO_RESERVE_INFORMATION
-	FileSfioVolumeInformation, // FILE_SFIO_VOLUME_INFORMATION
-	FileHardLinkInformation, // FILE_LINKS_INFORMATION
-	FileProcessIdsUsingFileInformation, // FILE_PROCESS_IDS_USING_FILE_INFORMATION
-	FileNormalizedNameInformation, // FILE_NAME_INFORMATION
-	FileNetworkPhysicalNameInformation, // FILE_NETWORK_PHYSICAL_NAME_INFORMATION
-	FileIdGlobalTxDirectoryInformation, // FILE_ID_GLOBAL_TX_DIR_INFORMATION // since WIN7 // 50
-	FileIsRemoteDeviceInformation, // FILE_IS_REMOTE_DEVICE_INFORMATION
+	FileModeInformation, // q; s: FILE_MODE_INFORMATION
+	FileAlignmentInformation, // q: FILE_ALIGNMENT_INFORMATION
+	FileAllInformation, // q: FILE_ALL_INFORMATION (requires FILE_READ_ATTRIBUTES)
+	FileAllocationInformation, // s: FILE_ALLOCATION_INFORMATION (requires FILE_WRITE_DATA)
+	FileEndOfFileInformation, // s: FILE_END_OF_FILE_INFORMATION (requires FILE_WRITE_DATA) // 20
+	FileAlternateNameInformation, // q: FILE_NAME_INFORMATION
+	FileStreamInformation, // q: FILE_STREAM_INFORMATION
+	FilePipeInformation, // q; s: FILE_PIPE_INFORMATION (q: requires FILE_READ_ATTRIBUTES; s: requires FILE_WRITE_ATTRIBUTES)
+	FilePipeLocalInformation, // q: FILE_PIPE_LOCAL_INFORMATION (requires FILE_READ_ATTRIBUTES)
+	FilePipeRemoteInformation, // q; s: FILE_PIPE_REMOTE_INFORMATION (q: requires FILE_READ_ATTRIBUTES; s: requires FILE_WRITE_ATTRIBUTES)
+	FileMailslotQueryInformation, // q: FILE_MAILSLOT_QUERY_INFORMATION
+	FileMailslotSetInformation, // s: FILE_MAILSLOT_SET_INFORMATION
+	FileCompressionInformation, // q: FILE_COMPRESSION_INFORMATION
+	FileObjectIdInformation, // q: FILE_OBJECTID_INFORMATION (requires FILE_LIST_DIRECTORY) (NtQueryDirectoryFile[Ex])
+	FileCompletionInformation, // s: FILE_COMPLETION_INFORMATION // 30
+	FileMoveClusterInformation, // s: FILE_MOVE_CLUSTER_INFORMATION (requires FILE_WRITE_DATA)
+	FileQuotaInformation, // q: FILE_QUOTA_INFORMATION (requires FILE_LIST_DIRECTORY) (NtQueryDirectoryFile[Ex])
+	FileReparsePointInformation, // q: FILE_REPARSE_POINT_INFORMATION (requires FILE_LIST_DIRECTORY) (NtQueryDirectoryFile[Ex])
+	FileNetworkOpenInformation, // q: FILE_NETWORK_OPEN_INFORMATION (requires FILE_READ_ATTRIBUTES)
+	FileAttributeTagInformation, // q: FILE_ATTRIBUTE_TAG_INFORMATION (requires FILE_READ_ATTRIBUTES)
+	FileTrackingInformation, // s: FILE_TRACKING_INFORMATION (requires FILE_WRITE_DATA)
+	FileIdBothDirectoryInformation, // q: FILE_ID_BOTH_DIR_INFORMATION (requires FILE_LIST_DIRECTORY) (NtQueryDirectoryFile[Ex])
+	FileIdFullDirectoryInformation, // q: FILE_ID_FULL_DIR_INFORMATION (requires FILE_LIST_DIRECTORY) (NtQueryDirectoryFile[Ex])
+	FileValidDataLengthInformation, // s: FILE_VALID_DATA_LENGTH_INFORMATION (requires FILE_WRITE_DATA and/or SeManageVolumePrivilege)
+	FileShortNameInformation, // s: FILE_NAME_INFORMATION (requires DELETE) // 40
+	FileIoCompletionNotificationInformation, // q; s: FILE_IO_COMPLETION_NOTIFICATION_INFORMATION (q: requires FILE_READ_ATTRIBUTES) // since VISTA
+	FileIoStatusBlockRangeInformation, // s: FILE_IOSTATUSBLOCK_RANGE_INFORMATION (requires SeLockMemoryPrivilege)
+	FileIoPriorityHintInformation, // q; s: FILE_IO_PRIORITY_HINT_INFORMATION, FILE_IO_PRIORITY_HINT_INFORMATION_EX (q: requires FILE_READ_DATA)
+	FileSfioReserveInformation, // q; s: FILE_SFIO_RESERVE_INFORMATION (q: requires FILE_READ_DATA)
+	FileSfioVolumeInformation, // q: FILE_SFIO_VOLUME_INFORMATION (requires FILE_READ_ATTRIBUTES)
+	FileHardLinkInformation, // q: FILE_LINKS_INFORMATION
+	FileProcessIdsUsingFileInformation, // q: FILE_PROCESS_IDS_USING_FILE_INFORMATION (requires FILE_READ_ATTRIBUTES)
+	FileNormalizedNameInformation, // q: FILE_NAME_INFORMATION
+	FileNetworkPhysicalNameInformation, // q: FILE_NETWORK_PHYSICAL_NAME_INFORMATION
+	FileIdGlobalTxDirectoryInformation, // q: FILE_ID_GLOBAL_TX_DIR_INFORMATION (requires FILE_LIST_DIRECTORY) (NtQueryDirectoryFile[Ex]) // since WIN7 // 50
+	FileIsRemoteDeviceInformation, // q: FILE_IS_REMOTE_DEVICE_INFORMATION (requires FILE_READ_ATTRIBUTES)
 	FileUnusedInformation,
-	FileNumaNodeInformation, // FILE_NUMA_NODE_INFORMATION
-	FileStandardLinkInformation, // FILE_STANDARD_LINK_INFORMATION
-	FileRemoteProtocolInformation, // FILE_REMOTE_PROTOCOL_INFORMATION
-	FileRenameInformationBypassAccessCheck, // (kernel-mode only); FILE_RENAME_INFORMATION // since WIN8
-	FileLinkInformationBypassAccessCheck, // (kernel-mode only); FILE_LINK_INFORMATION
-	FileVolumeNameInformation, // FILE_VOLUME_NAME_INFORMATION
-	FileIdInformation, // FILE_ID_INFORMATION
-	FileIdExtdDirectoryInformation, // FILE_ID_EXTD_DIR_INFORMATION // 60
-	FileReplaceCompletionInformation, // FILE_COMPLETION_INFORMATION // since WINBLUE
-	FileHardLinkFullIdInformation, // FILE_LINK_ENTRY_FULL_ID_INFORMATION // FILE_LINKS_FULL_ID_INFORMATION
-	FileIdExtdBothDirectoryInformation, // FILE_ID_EXTD_BOTH_DIR_INFORMATION // since THRESHOLD
-	FileDispositionInformationEx, // FILE_DISPOSITION_INFO_EX // since REDSTONE
-	FileRenameInformationEx, // FILE_RENAME_INFORMATION_EX
-	FileRenameInformationExBypassAccessCheck, // (kernel-mode only); FILE_RENAME_INFORMATION_EX
-	FileDesiredStorageClassInformation, // FILE_DESIRED_STORAGE_CLASS_INFORMATION // since REDSTONE2
-	FileStatInformation, // FILE_STAT_INFORMATION
-	FileMemoryPartitionInformation, // FILE_MEMORY_PARTITION_INFORMATION // since REDSTONE3
-	FileStatLxInformation, // FILE_STAT_LX_INFORMATION // since REDSTONE4 // 70
-	FileCaseSensitiveInformation, // FILE_CASE_SENSITIVE_INFORMATION
-	FileLinkInformationEx, // FILE_LINK_INFORMATION_EX // since REDSTONE5
-	FileLinkInformationExBypassAccessCheck, // (kernel-mode only); FILE_LINK_INFORMATION_EX
-	FileStorageReserveIdInformation, // FILE_SET_STORAGE_RESERVE_ID_INFORMATION
-	FileCaseSensitiveInformationForceAccessCheck, // FILE_CASE_SENSITIVE_INFORMATION
-	FileKnownFolderInformation, // FILE_KNOWN_FOLDER_INFORMATION // since WIN11
+	FileNumaNodeInformation, // q: FILE_NUMA_NODE_INFORMATION
+	FileStandardLinkInformation, // q: FILE_STANDARD_LINK_INFORMATION
+	FileRemoteProtocolInformation, // q: FILE_REMOTE_PROTOCOL_INFORMATION
+	FileRenameInformationBypassAccessCheck, // (kernel-mode only); s: FILE_RENAME_INFORMATION // since WIN8
+	FileLinkInformationBypassAccessCheck, // (kernel-mode only); s: FILE_LINK_INFORMATION
+	FileVolumeNameInformation, // q: FILE_VOLUME_NAME_INFORMATION
+	FileIdInformation, // q: FILE_ID_INFORMATION
+	FileIdExtdDirectoryInformation, // q: FILE_ID_EXTD_DIR_INFORMATION (requires FILE_LIST_DIRECTORY) (NtQueryDirectoryFile[Ex]) // 60
+	FileReplaceCompletionInformation, // s: FILE_COMPLETION_INFORMATION // since WINBLUE
+	FileHardLinkFullIdInformation, // q: FILE_LINK_ENTRY_FULL_ID_INFORMATION // FILE_LINKS_FULL_ID_INFORMATION
+	FileIdExtdBothDirectoryInformation, // q: FILE_ID_EXTD_BOTH_DIR_INFORMATION (requires FILE_LIST_DIRECTORY) (NtQueryDirectoryFile[Ex]) // since THRESHOLD
+	FileDispositionInformationEx, // s: FILE_DISPOSITION_INFO_EX (requires DELETE) // since REDSTONE
+	FileRenameInformationEx, // s: FILE_RENAME_INFORMATION_EX
+	FileRenameInformationExBypassAccessCheck, // (kernel-mode only); s: FILE_RENAME_INFORMATION_EX
+	FileDesiredStorageClassInformation, // q; s: FILE_DESIRED_STORAGE_CLASS_INFORMATION (q: requires FILE_READ_ATTRIBUTES; s: requires FILE_WRITE_ATTRIBUTES) // since REDSTONE2
+	FileStatInformation, // q: FILE_STAT_INFORMATION (requires FILE_READ_ATTRIBUTES)
+	FileMemoryPartitionInformation, // s: FILE_MEMORY_PARTITION_INFORMATION // since REDSTONE3
+	FileStatLxInformation, // q: FILE_STAT_LX_INFORMATION (requires FILE_READ_ATTRIBUTES and FILE_READ_EA) // since REDSTONE4 // 70
+	FileCaseSensitiveInformation, // q; s: FILE_CASE_SENSITIVE_INFORMATION (q: requires FILE_READ_ATTRIBUTES; s: requires FILE_WRITE_ATTRIBUTES)
+	FileLinkInformationEx, // s: FILE_LINK_INFORMATION_EX // since REDSTONE5
+	FileLinkInformationExBypassAccessCheck, // (kernel-mode only); s: FILE_LINK_INFORMATION_EX
+	FileStorageReserveIdInformation, // q; s: FILE_STORAGE_RESERVE_ID_INFORMATION (q: requires FILE_READ_ATTRIBUTES; s: requires FILE_WRITE_ATTRIBUTES)
+	FileCaseSensitiveInformationForceAccessCheck, // q; s: FILE_CASE_SENSITIVE_INFORMATION
+	FileKnownFolderInformation, // q; s: FILE_KNOWN_FOLDER_INFORMATION (q: requires FILE_READ_ATTRIBUTES; s: requires FILE_WRITE_ATTRIBUTES) // since WIN11
+	FileStatBasicInformation, // since 23H2
+	FileId64ExtdDirectoryInformation,
+	FileId64ExtdBothDirectoryInformation,
+	FileIdAllExtdDirectoryInformation,
+	FileIdAllExtdBothDirectoryInformation,
 	FileMaximumInformation
 } FILE_INFORMATION_CLASS, * PFILE_INFORMATION_CLASS;
 
@@ -4545,9 +4551,9 @@ typedef struct _BASE_STATIC_SERVER_DATA
 	USHORT CSDNumber;											//0x36
 	USHORT RCNumber;											//0x38
 	WCHAR CSDVersion[128];										//0x3A
-	//SYSTEM_BASIC_INFORMATION SysInfo;							//0x13A
-	SYSTEM_TIMEOFDAY_INFORMATION TimeOfDay;						//0x13A->0x140
-	PINIFILE_MAPPING IniFileMapping;							//0x148 
+	//SYSTEM_BASIC_INFORMATION SysInfo;							
+	SYSTEM_TIMEOFDAY_INFORMATION TimeOfDay;						//0x140 (0x13A)
+	PINIFILE_MAPPING IniFileMapping;							//0x170
 	NLS_USER_INFO NlsUserInfo;									//0x178 kernelbase.dll!BaseNlsDllInitialize basesrv.dll!BaseSrvNlsGetUserInfo
 	BOOLEAN DefaultSeparateVDM;									//0x7F4 kernelbase.dll!CreateProcessInternalW 
 	BOOLEAN IsWowTaskReady;										//0x7F5

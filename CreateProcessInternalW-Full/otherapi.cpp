@@ -91,15 +91,15 @@ NTSTATUS  BasepConvertWin32AttributeList(
 	// 对于 Windows 11 21H2 来说
 	if (OSBuildNumber < 25295 && NtdllRevision)
 	{
-		if (OSBuildNumber < 19090 && NtdllRevision >= 3636)		// [10.0.19041.3636]
+		if (NtdllBuildNumber < 19090 && NtdllRevision >= 3636)		// [10.0.19041.3636]
 		{
 			FsctlMitigationSupported = TRUE;
 		}
-		else if (OSBuildNumber <= 22000 && NtdllRevision >= 2600)// [10.0.22000.2538] 当且仅当2023/11 开始出现 [10.0.22000.2600] 
+		else if (NtdllBuildNumber <= 22000 && NtdllRevision >= 2600)// [10.0.22000.2538] 当且仅当2023/11 开始出现 [10.0.22000.2600] 
 		{
 			FsctlMitigationSupported = TRUE;
 		}
-		else if (OSBuildNumber <= 22621 && NtdllRevision > 2134)	// [10.0.22621.2134]
+		else if (NtdllBuildNumber <= 22631 && NtdllRevision > 2134)	// [10.0.22621.2134]
 		{
 			FsctlMitigationSupported = TRUE;
 		}
@@ -129,7 +129,7 @@ NTSTATUS  BasepConvertWin32AttributeList(
 	}
 
 	TempArgument = va_arg(vargument, PVOID);
-	if (OSBuildNumber > 22000)// > ?
+	if (OSBuildNumber > 22000)// > 22000
 	{
 		VArgument[i++] = TempArgument;//TrustletAttributes
 	}
@@ -212,7 +212,7 @@ PRTL_USER_PROCESS_PARAMETERS BasepCreateProcessParameters(
 {	
 	NTSTATUS Status = 0;
 	BOOLEAN IsDllPathHeapAllocated = FALSE;
-	PRTL_USER_PROCESS_PARAMETERS CurrentProcessParameters;
+	PRTL_USER_PROCESS_PARAMETERS CurrentProcessParameters = NULL;
 	PRTL_USER_PROCESS_PARAMETERS ProcessParameters = NULL;
 	RTL_USER_PROCESS_PARAMETERS TemplateProcessParameters = { 0 };
 
@@ -451,25 +451,25 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 	{
 		Status = NtQueryInformationToken(TokenHandle, TokenSessionId, &SessionId, sizeof(ULONG), &ReturnLength);
 		if (!NT_SUCCESS(Status))
-			__leave;
+			leave;
 
 		Status = NtQueryInformationToken(TokenHandle, TokenIsAppContainer, &ulIsAppContainer, sizeof(ULONG), &ReturnLength);
 		if (!NT_SUCCESS(Status))
-			__leave;
+			leave;
 
 		Status = NtQueryInformationToken(TokenHandle, TokenPrivateNameSpace, &ulIsPrivateNamespace, sizeof(ULONG), &ReturnLength);
 		if (!NT_SUCCESS(Status))
-			__leave;
+			leave;
 
 
 		if (ulIsPrivateNamespace)
 		{
 			Status = NtQueryInformationToken(TokenHandle, TokenUser, pTokenUser, SECURITY_MAX_SID_SIZE + sizeof(TOKEN_USER), &ReturnLength);
 			if (!NT_SUCCESS(Status))
-				__leave;
+				leave;
 			Status = RtlConvertSidToUnicodeString(&SidString, pTokenUser->User.Sid, TRUE);
 			if (!NT_SUCCESS(Status))
-				__leave;
+				leave;
 		}
 
 		if (ulIsAppContainer)
@@ -480,7 +480,7 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 			if (!pAppContainerTokenInfo)
 			{
 				Status = STATUS_INSUFFICIENT_RESOURCES;
-				__leave;
+				leave;
 			}
 
 			Status = NtQueryInformationToken(TokenHandle, TokenAppContainerSid, pAppContainerTokenInfo, AppContainerSidLength, &ReturnLength);
@@ -496,7 +496,7 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 					Status = STATUS_INSUFFICIENT_RESOURCES;
 			}
 			if (!NT_SUCCESS(Status))
-				__leave;
+				leave;
 
 			Status = RtlStringCchPrintfW(
 				szBaseNamedObjectDirectory,// szAppContainerBaseNamedObjectDirectory
@@ -505,7 +505,7 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 				L"\\Sessions",
 				SessionId);
 			if (!NT_SUCCESS(Status))
-				__leave;
+				leave;
 
 			if (IsRemoteCrossSession)
 			{
@@ -529,7 +529,7 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 			InitializeObjectAttributes(&ObjectAttributes, &szName, OBJ_CASE_INSENSITIVE, NULL, NULL);
 			Status = NtOpenDirectoryObject(&RootDirectory, DIRECTORY_TRAVERSE, &ObjectAttributes);
 			if (!NT_SUCCESS(Status))
-				__leave;
+				leave;
 
 			if (ulIsPrivateNamespace)
 			{
@@ -538,7 +538,7 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 
 				Status = NtOpenDirectoryObject(&TempDirectoryHandle, DIRECTORY_TRAVERSE, &ObjectAttributes);
 				if (!NT_SUCCESS(Status))
-					__leave;
+					leave;
 
 				NtClose(RootDirectory);
 				RootDirectory = TempDirectoryHandle;
@@ -547,13 +547,13 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 
 			Status = RtlGetAppContainerSidType(pAppContainerTokenInfo->TokenAppContainer, &TokenSidType);
 			if (!NT_SUCCESS(Status))
-				__leave;
+				leave;
 
 			if (TokenSidType == ParentAppContainerSidType)
 			{
 				Status = RtlConvertSidToUnicodeString(&AppContainerTokenSidString, pAppContainerTokenInfo->TokenAppContainer, TRUE);
 				if (!NT_SUCCESS(Status))
-					__leave;
+					leave;
 
 				InitializeObjectAttributes(&ObjectAttributes, &AppContainerTokenSidString, OBJ_CASE_INSENSITIVE, RootDirectory, NULL);
 				Status = NtOpenDirectoryObject(&DirectoryObjectHandle, DIRECTORY_QUERY | DIRECTORY_TRAVERSE | DIRECTORY_CREATE_OBJECT | DIRECTORY_CREATE_SUBDIRECTORY, &ObjectAttributes);
@@ -563,11 +563,11 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 			{
 				Status = RtlGetAppContainerParent(pAppContainerTokenInfo->TokenAppContainer, &AppContainerParentSid);
 				if (!NT_SUCCESS(Status))
-					__leave;
+					leave;
 
 				Status = RtlConvertSidToUnicodeString(&AppContainerTokenSidString, AppContainerParentSid, TRUE);
 				if (!NT_SUCCESS(Status))
-					__leave;
+					leave;
 
 				//SECURITY_CHILD_PACKAGE_RID_COUNT
 				Status = RtlStringCchPrintfW(
@@ -581,7 +581,7 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 					*RtlSubAuthoritySid(pAppContainerTokenInfo->TokenAppContainer, SECURITY_PARENT_PACKAGE_RID_COUNT + 3)
 				);
 				if (!NT_SUCCESS(Status))
-					__leave;
+					leave;
 				RtlInitUnicodeString(&ChildAppContainerObjectName, pszDest);
 				InitializeObjectAttributes(&ObjectAttributes, &ChildAppContainerObjectName, OBJ_CASE_INSENSITIVE, RootDirectory, NULL);
 				Status = NtOpenDirectoryObject(&DirectoryObjectHandle, DIRECTORY_QUERY | DIRECTORY_TRAVERSE | DIRECTORY_CREATE_OBJECT | DIRECTORY_CREATE_SUBDIRECTORY, &ObjectAttributes);
@@ -623,7 +623,7 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 			dprintf(L"[x] szBaseNamedObjectDirectory: %ls\n", szBaseNamedObjectDirectory);
 
 			if (!NT_SUCCESS(Status))
-				__leave;
+				leave;
 
 			if (ulIsPrivateNamespace)
 			{
@@ -649,7 +649,7 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 				Status = NtOpenDirectoryObject(&RootDirectory, DIRECTORY_TRAVERSE, &ObjectAttributes);
 
 				if (!NT_SUCCESS(Status))
-					__leave;
+					leave;
 			}
 			else
 			{
@@ -682,7 +682,7 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 			{
 				Status = NtOpenDirectoryObject(&TempDirectoryHandle, DIRECTORY_QUERY, &ObjectAttributes);
 				if (!NT_SUCCESS(Status))
-					__leave;
+					leave;
 
 				InitializeObjectAttributes(&ObjectAttributes, &RestrictedName, OBJ_CASE_INSENSITIVE, TempDirectoryHandle, NULL);
 				Status = NtOpenDirectoryObject(&DirectoryObjectHandle, DIRECTORY_QUERY | DIRECTORY_TRAVERSE | DIRECTORY_CREATE_OBJECT | DIRECTORY_CREATE_SUBDIRECTORY, &ObjectAttributes);
@@ -692,19 +692,19 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 		}
 
 		if (!NT_SUCCESS(Status))
-			__leave;
+			leave;
 
 		if (CheckTokenBnoIsolation)
 		{
 			Status = NtQueryInformationToken(TokenHandle, TokenBnoIsolation, &TokenBnoIsolationInfo, sizeof(TOKEN_BNO_ISOLATION_INFORMATION) + BNOISOLATION_PREFIX_MAXLENGTH, &ReturnLength);
 			if (!NT_SUCCESS(Status))
-				__leave;
+				leave;
 
 			if (!TokenBnoIsolationInfo.IsolationEnabled)
 			{
 				*DirectoryHandle = DirectoryObjectHandle;
 				DirectoryObjectHandle = NULL;
-				__leave;
+				leave;
 			}
 
 			RtlInitUnicodeString(&szName, TokenBnoIsolationInfo.IsolationPrefix);
@@ -713,7 +713,7 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 
 			Status = NtOpenDirectoryObject(&TempDirectoryHandle, DIRECTORY_QUERY | DIRECTORY_TRAVERSE | DIRECTORY_CREATE_OBJECT | DIRECTORY_CREATE_SUBDIRECTORY, &ObjectAttributes);
 			if (!NT_SUCCESS(Status))
-				__leave;
+				leave;
 	
 			NtClose(DirectoryObjectHandle);
 			DirectoryObjectHandle = TempDirectoryHandle;
@@ -791,13 +791,13 @@ NTSTATUS BasepCreateBnoIsolationSymbolicLinks(
 		if (!NT_SUCCESS(Status))
 		{
 			if (Status != STATUS_INFO_LENGTH_MISMATCH)
-				__leave;
+				leave;
 
 			ObjectNameHeapBuffer = (POBJECT_NAME_INFORMATION)RtlAllocateHeap(RtlProcessHeap(), 0, ObjectNameLength);
 			if (!ObjectNameHeapBuffer)
 			{
 				Status = STATUS_NO_MEMORY;
-				__leave;
+				leave;
 			}
 
 			Status = NtQueryObject(
@@ -808,7 +808,7 @@ NTSTATUS BasepCreateBnoIsolationSymbolicLinks(
 				&ObjectNameLength);
 
 			if (!NT_SUCCESS(Status))
-				__leave;
+				leave;
 			
 			ObjectName = (POBJECT_NAME_INFORMATION)ObjectNameHeapBuffer;
 		}
@@ -826,7 +826,7 @@ NTSTATUS BasepCreateBnoIsolationSymbolicLinks(
 			&GloablObjectDirectoryName);
 
 		if (!NT_SUCCESS(Status))
-			__leave;
+			leave;
 
 		//
 		// Local SymbolicLink Handle
@@ -834,7 +834,7 @@ NTSTATUS BasepCreateBnoIsolationSymbolicLinks(
 		TargetNameBuffer[0] = L'\0';
 		Status = RtlStringCchPrintfW(TargetNameBuffer, MAX_SESSION_PATH + BNOISOLATION_PREFIX_MAXLENGTH, L"%ws\\%ws", ObjectName->Name.Buffer, IsolationPrefix->Buffer);
 		if (!NT_SUCCESS(Status))
-			__leave;
+			leave;
 
 		RtlInitUnicodeString(&LinkTargetName, TargetNameBuffer);
 		InitializeObjectAttributes(&ObjectAttributes, &LocalName, OBJ_OPENIF | OBJ_INHERIT, BnoRootDirectory, NULL);
@@ -846,7 +846,7 @@ NTSTATUS BasepCreateBnoIsolationSymbolicLinks(
 			&LinkTargetName);
 
 		if (!NT_SUCCESS(Status))
-			__leave;
+			leave;
 
 
 		//
@@ -855,7 +855,7 @@ NTSTATUS BasepCreateBnoIsolationSymbolicLinks(
 		TargetNameBuffer[0] = L'\0';
 		Status = RtlStringCchPrintfW(TargetNameBuffer, MAX_SESSION_PATH + BNOISOLATION_PREFIX_MAXLENGTH, L"%ws\\%ws", ObjectName->Name.Buffer, L"Session");
 		if (!NT_SUCCESS(Status))
-			__leave;
+			leave;
 
 		RtlInitUnicodeString(&LinkTargetName, TargetNameBuffer);
 		InitializeObjectAttributes(&ObjectAttributes, &SessionName, OBJ_OPENIF | OBJ_INHERIT, BnoRootDirectory, NULL);
@@ -867,7 +867,7 @@ NTSTATUS BasepCreateBnoIsolationSymbolicLinks(
 			&LinkTargetName);
 
 		if (!NT_SUCCESS(Status))
-			__leave;
+			leave;
 
 		//
 		// AppContainerNamedObjects SymbolicLink Handle
@@ -875,7 +875,7 @@ NTSTATUS BasepCreateBnoIsolationSymbolicLinks(
 		TargetNameBuffer[0] = L'\0';
 		Status = RtlStringCchPrintfW(TargetNameBuffer, MAX_SESSION_PATH + BNOISOLATION_PREFIX_MAXLENGTH, L"%ws\\%ws", ObjectName->Name.Buffer, L"AppContainerNamedObjects");
 		if (!NT_SUCCESS(Status))
-			__leave;
+			leave;
 
 		RtlInitUnicodeString(&LinkTargetName, TargetNameBuffer);
 		InitializeObjectAttributes(&ObjectAttributes, &AppContainerNamedObjectsName, OBJ_OPENIF | OBJ_INHERIT, BnoRootDirectory, NULL);
@@ -887,7 +887,7 @@ NTSTATUS BasepCreateBnoIsolationSymbolicLinks(
 			&LinkTargetName);
 
 		if (!NT_SUCCESS(Status))
-			__leave;
+			leave;
 		
 		//
 		// Symbolic Link Handle Output
@@ -942,7 +942,7 @@ NTSTATUS BasepCreateBnoIsolationObjectDirectories(IN HANDLE TokenHandle, IN OUT 
 			Status = NtOpenProcessToken(NtCurrentProcess(), TOKEN_QUERY, &hToken);
 
 			if (!NT_SUCCESS(Status))
-				__leave;
+				leave;
 
 			TokenHandle = hToken;
 		}
@@ -951,19 +951,19 @@ NTSTATUS BasepCreateBnoIsolationObjectDirectories(IN HANDLE TokenHandle, IN OUT 
 		if (!HandleList)
 		{
 			Status = STATUS_NO_MEMORY;
-			__leave;
+			leave;
 		}
 
 		Status = BasepGetNamedObjectDirectoryForToken(TokenHandle, TRUE, 0, DIRECTORY_QUERY | DIRECTORY_TRAVERSE | DIRECTORY_CREATE_OBJECT | DIRECTORY_CREATE_SUBDIRECTORY, &BaseNamedObjectDirectory);
 
 		if (!NT_SUCCESS(Status))
-			__leave;
+			leave;
 
 		InitializeObjectAttributes(&ObjectAttributes, &BnoIsolation->IsolationPrefix, OBJ_OPENIF, BaseNamedObjectDirectory, NULL);
 		Status = NtCreateDirectoryObjectEx(&HandleList[0], DIRECTORY_QUERY | DIRECTORY_TRAVERSE | DIRECTORY_CREATE_OBJECT | DIRECTORY_CREATE_SUBDIRECTORY, &ObjectAttributes, NULL, AlwaysInheritSecurity);
 
 		if (!NT_SUCCESS(Status))
-			__leave;
+			leave;
 
 		Status = BasepCreateBnoIsolationSymbolicLinks(
 			BaseNamedObjectDirectory,
@@ -975,7 +975,7 @@ NTSTATUS BasepCreateBnoIsolationObjectDirectories(IN HANDLE TokenHandle, IN OUT 
 			&HandleList[4]);
 
 		if (!NT_SUCCESS(Status))
-			__leave;
+			leave;
 
 		BnoIsolation->Handles = HandleList;
 		BnoIsolation->HandleCount = 5;

@@ -124,6 +124,7 @@ extern	HMODULE Ntdll;
 extern	HMODULE Kernel32;
 extern	HMODULE KernelBase;
 extern	USHORT NtdllRevision;
+extern	USHORT NtdllBuildNumber;
 EXTERN_C DWORD SW3_GetSyscallNumber(DWORD FunctionHash);
 EXTERN_C PVOID SW3_GetSyscallAddress(DWORD FunctionHash);
 EXTERN_C PVOID internal_cleancall_wow64_gate(VOID);

@@ -1,6 +1,4 @@
-﻿#pragma once
-#define UMDF_USING_NTSTATUS
-#pragma comment(lib, "Ntdll.lib")
+﻿#define UMDF_USING_NTSTATUS
 #include <ntstatus.h>
 #include "structs.hpp"
 #include "csrss.hpp"
