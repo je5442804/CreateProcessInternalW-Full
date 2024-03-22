@@ -2167,7 +2167,7 @@ BOOL WINAPI CreateProcessInternalW(
                 leave;
             }
         }
-        BaseCreateProcessMessageOutPut(BaseCreateProcessMessage->Sxs);
+        // BaseCreateProcessMessageOutPut(BaseCreateProcessMessage->Sxs);
         Status = CsrClientCallServer((PCSR_API_MESSAGE)&ApiMessage, CaptureBuffer, CSR_MAKE_API_NUMBER(BASESRV_SERVERDLL_INDEX, BasepCreateProcess2), sizeof(BASE_CREATEPROCESS_MSG));
         if (!NT_SUCCESS((NTSTATUS)ApiMessage.Status))
         {
