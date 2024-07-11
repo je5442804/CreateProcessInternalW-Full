@@ -2,16 +2,23 @@
 #include "otherapi.hpp"
 #include "csrss.hpp"
 #include "syscalls.hpp"
+#include <SoftPub.h>
+
+#pragma comment(lib,"WinTrust")
 #pragma warning(disable: 4996)
+#pragma warning(disable: 5056) 
 static UNICODE_STRING RestrictedName = RTL_CONSTANT_STRING(L"Restricted");
 static UNICODE_STRING LocalName = RTL_CONSTANT_STRING(L"Local");
 static UNICODE_STRING GlobalName = RTL_CONSTANT_STRING(L"Global");
 static UNICODE_STRING SessionName = RTL_CONSTANT_STRING(L"Session");
 static UNICODE_STRING AppContainerNamedObjectsName = RTL_CONSTANT_STRING(L"AppContainerNamedObjects");
 
+
+// 2147483647
 #ifndef NTSTRSAFE_MAX_CCH
-#define NTSTRSAFE_MAX_CCH 2147483647
+#define NTSTRSAFE_MAX_CCH 0x7FFFFFFF 
 #endif
+
 #ifndef NTSTRSAFE_PWSTR
 typedef _Null_terminated_ wchar_t* NTSTRSAFE_PWSTR;
 typedef CONST NTSTRSAFE_PWSTR NTSTRSAFE_PCWSTR;
@@ -28,18 +35,20 @@ typedef CONST NTSTRSAFE_PWSTR NTSTRSAFE_PCWSTR;
 // _In_ size_t cchDest,
 // _In_ _Printf_format_string_ NTSTRSAFE_PWSTR pszFormat,
 //
+
+
 NTSTRSAFEAPI RtlStringCchPrintfW(wchar_t* pszDest, size_t cchDest, const wchar_t* pszFormat, ...)
 {
 	NTSTATUS Status = 0;
 	va_list argList;
-
+	va_start(argList, pszFormat);
 	if (cchDest > NTSTRSAFE_MAX_CCH)
 	{
 		if (cchDest > 0)
 			*pszDest = L'\0';
 		return STATUS_INVALID_PARAMETER;
 	}
-	va_start(argList, pszFormat);
+	
 	//Status = RtlStringVPrintfWorkerW(pszDest, cchDest, pszFormat, argList);
 	size_t cchMax = cchDest - 1;
 	int iRet = _vsnwprintf(pszDest, cchMax, pszFormat, argList);
@@ -243,13 +252,16 @@ PRTL_USER_PROCESS_PARAMETERS BasepCreateProcessParameters(
 		{
 			
 			TemplateProcessParameters.DllPath.Buffer = (PWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, TemplateProcessParameters.DllPath.Length);
+
 			if (!TemplateProcessParameters.DllPath.Buffer)
 			{
 				Status = STATUS_NO_MEMORY;
 				goto Fail;
 			}
+
 			TemplateProcessParameters.DllPath.MaximumLength = TemplateProcessParameters.DllPath.Length;
 			IsDllPathHeapAllocated = TRUE;
+
 			Status = LdrGetDllDirectory(&TemplateProcessParameters.DllPath);
 			if (!NT_SUCCESS(Status))
 				goto Fail;
@@ -265,6 +277,7 @@ PRTL_USER_PROCESS_PARAMETERS BasepCreateProcessParameters(
 	Status = RtlInitUnicodeStringEx(&TemplateProcessParameters.DesktopInfo, StartInfo->lpDesktop);
 	if (!NT_SUCCESS(Status))
 		goto Fail;
+
 	Status = RtlInitUnicodeStringEx(&TemplateProcessParameters.ShellInfo, StartInfo->lpReserved);
 	if (!NT_SUCCESS(Status))
 		goto Fail;
@@ -313,6 +326,7 @@ PRTL_USER_PROCESS_PARAMETERS BasepCreateProcessParameters(
 			ProcessParameters->StandardError = NULL;
 		}
 	}
+
 	if (dwCreationFlags & DETACHED_PROCESS)
 	{
 		ProcessParameters->ConsoleHandle = CONSOLE_DETACHED_PROCESS;
@@ -444,7 +458,6 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 	TOKEN_BNO_ISOLATION_INFORMATION TokenBnoIsolationInfo = { 0 };
 	WCHAR pszDest[MAX_PATH] = { 0 };
 
-
 	memset(pszDest, 0, sizeof(pszDest));
 
 	__try
@@ -460,13 +473,13 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 		Status = NtQueryInformationToken(TokenHandle, TokenPrivateNameSpace, &ulIsPrivateNamespace, sizeof(ULONG), &ReturnLength);
 		if (!NT_SUCCESS(Status))
 			leave;
-
-
+		
 		if (ulIsPrivateNamespace)
 		{
 			Status = NtQueryInformationToken(TokenHandle, TokenUser, pTokenUser, SECURITY_MAX_SID_SIZE + sizeof(TOKEN_USER), &ReturnLength);
 			if (!NT_SUCCESS(Status))
 				leave;
+
 			Status = RtlConvertSidToUnicodeString(&SidString, pTokenUser->User.Sid, TRUE);
 			if (!NT_SUCCESS(Status))
 				leave;
@@ -488,6 +501,7 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 			{
 				RtlFreeHeap(RtlProcessHeap(), 0, pAppContainerTokenInfo);
 				pAppContainerTokenInfo = (PTOKEN_APPCONTAINER_INFORMATION)RtlAllocateHeap(RtlProcessHeap(), 0, ReturnLength);
+
 				if (pAppContainerTokenInfo)
 				{
 					Status = NtQueryInformationToken(TokenHandle, TokenAppContainerSid, pAppContainerTokenInfo, ReturnLength, &ReturnLength);
@@ -495,6 +509,7 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 				else
 					Status = STATUS_INSUFFICIENT_RESOURCES;
 			}
+
 			if (!NT_SUCCESS(Status))
 				leave;
 
@@ -533,9 +548,7 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 
 			if (ulIsPrivateNamespace)
 			{
-
 				InitializeObjectAttributes(&ObjectAttributes, &SidString, OBJ_CASE_INSENSITIVE, RootDirectory, NULL);
-
 				Status = NtOpenDirectoryObject(&TempDirectoryHandle, DIRECTORY_TRAVERSE, &ObjectAttributes);
 				if (!NT_SUCCESS(Status))
 					leave;
@@ -580,8 +593,10 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 					*RtlSubAuthoritySid(pAppContainerTokenInfo->TokenAppContainer, SECURITY_PARENT_PACKAGE_RID_COUNT + 2),
 					*RtlSubAuthoritySid(pAppContainerTokenInfo->TokenAppContainer, SECURITY_PARENT_PACKAGE_RID_COUNT + 3)
 				);
+
 				if (!NT_SUCCESS(Status))
 					leave;
+
 				RtlInitUnicodeString(&ChildAppContainerObjectName, pszDest);
 				InitializeObjectAttributes(&ObjectAttributes, &ChildAppContainerObjectName, OBJ_CASE_INSENSITIVE, RootDirectory, NULL);
 				Status = NtOpenDirectoryObject(&DirectoryObjectHandle, DIRECTORY_QUERY | DIRECTORY_TRAVERSE | DIRECTORY_CREATE_OBJECT | DIRECTORY_CREATE_SUBDIRECTORY, &ObjectAttributes);
@@ -609,7 +624,6 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 						break;
 					}
 						
-
 					szBaseNamedObjectDirectory[i++] = widechar;
 					Length--;
 				}
@@ -645,6 +659,7 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 						szName.Buffer = NULL;
 					}
 				}
+
 				InitializeObjectAttributes(&ObjectAttributes, &szName, OBJ_CASE_INSENSITIVE, NULL, NULL);
 				Status = NtOpenDirectoryObject(&RootDirectory, DIRECTORY_TRAVERSE, &ObjectAttributes);
 
@@ -710,7 +725,6 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 			RtlInitUnicodeString(&szName, TokenBnoIsolationInfo.IsolationPrefix);
 
 			InitializeObjectAttributes(&ObjectAttributes, &szName, OBJ_CASE_INSENSITIVE, DirectoryObjectHandle, NULL);
-
 			Status = NtOpenDirectoryObject(&TempDirectoryHandle, DIRECTORY_QUERY | DIRECTORY_TRAVERSE | DIRECTORY_CREATE_OBJECT | DIRECTORY_CREATE_SUBDIRECTORY, &ObjectAttributes);
 			if (!NT_SUCCESS(Status))
 				leave;
@@ -744,7 +758,7 @@ NTSTATUS BasepGetNamedObjectDirectoryForToken(
 		if (SidString.Buffer)
 			RtlFreeUnicodeString(&SidString);
 	}
-	//dprintf(L"[x] xxx Status: 0x%08lx\n", Status);
+	dprintf(L"[x] xxx Status: 0x%08lx\n", Status);
 	return Status;
 }
 
@@ -760,6 +774,7 @@ NTSTATUS BasepCreateBnoIsolationSymbolicLinks(
 	OUT HANDLE* lpAppContainerNamedObjectsLink
 )
 {
+	dprintf(L"[1] Pre NtQueryObject Status: 0x%p\n", BasepCreateBnoIsolationSymbolicLinks);
 	NTSTATUS Status;
 	ULONG ObjectNameLength = 0;
 	HANDLE LocalLinkHandle = NULL;
@@ -777,10 +792,13 @@ NTSTATUS BasepCreateBnoIsolationSymbolicLinks(
 	*lpGlobalLink = NULL;
 	*lpSessionLink = NULL;
 	*lpAppContainerNamedObjectsLink = NULL;
+
+	
 	memset(&ObjectAttributes, 0, sizeof(ObjectAttributes));
 
 	__try
 	{
+		
 		Status = NtQueryObject(
 			BaseNamedObjectDirectory,
 			ObjectNameInformation,
@@ -788,6 +806,7 @@ NTSTATUS BasepCreateBnoIsolationSymbolicLinks(
 			sizeof(OBJECT_NAME_INFORMATION) + MAX_SESSION_PATH * 2,
 			&ObjectNameLength);
 
+		dprintf(L"[1] NtQueryObject Status: 0x%08lx\n", Status);
 		if (!NT_SUCCESS(Status))
 		{
 			if (Status != STATUS_INFO_LENGTH_MISMATCH)
@@ -807,6 +826,7 @@ NTSTATUS BasepCreateBnoIsolationSymbolicLinks(
 				ObjectNameLength,
 				&ObjectNameLength);
 
+			dprintf(L"[1] Status: 0x%08lx\n", Status);
 			if (!NT_SUCCESS(Status))
 				leave;
 			
@@ -825,6 +845,7 @@ NTSTATUS BasepCreateBnoIsolationSymbolicLinks(
 			&ObjectAttributes,
 			&GloablObjectDirectoryName);
 
+		dprintf(L"[1] Status: 0x%08lx\n", Status);
 		if (!NT_SUCCESS(Status))
 			leave;
 
@@ -940,12 +961,13 @@ NTSTATUS BasepCreateBnoIsolationObjectDirectories(IN HANDLE TokenHandle, IN OUT 
 		if (!TokenHandle)
 		{
 			Status = NtOpenProcessToken(NtCurrentProcess(), TOKEN_QUERY, &hToken);
-
+			dprintf(L"[0] Status: 0x%08lx\n", Status);
 			if (!NT_SUCCESS(Status))
 				leave;
 
 			TokenHandle = hToken;
 		}
+
 		HandleListCount = 5;
 		HandleList = (PHANDLE)RtlAllocateHeap(RtlProcessHeap(), HEAP_ZERO_MEMORY, 5 * sizeof(HANDLE));
 		if (!HandleList)
@@ -955,13 +977,13 @@ NTSTATUS BasepCreateBnoIsolationObjectDirectories(IN HANDLE TokenHandle, IN OUT 
 		}
 
 		Status = BasepGetNamedObjectDirectoryForToken(TokenHandle, TRUE, 0, DIRECTORY_QUERY | DIRECTORY_TRAVERSE | DIRECTORY_CREATE_OBJECT | DIRECTORY_CREATE_SUBDIRECTORY, &BaseNamedObjectDirectory);
-
+		dprintf(L"[0] BasepGetNamedObjectDirectoryForToken Status: 0x%08lx\n", Status);
 		if (!NT_SUCCESS(Status))
 			leave;
 
 		InitializeObjectAttributes(&ObjectAttributes, &BnoIsolation->IsolationPrefix, OBJ_OPENIF, BaseNamedObjectDirectory, NULL);
 		Status = NtCreateDirectoryObjectEx(&HandleList[0], DIRECTORY_QUERY | DIRECTORY_TRAVERSE | DIRECTORY_CREATE_OBJECT | DIRECTORY_CREATE_SUBDIRECTORY, &ObjectAttributes, NULL, AlwaysInheritSecurity);
-
+		dprintf(L"[0] NtCreateDirectoryObjectEx Status: 0x%08lx\n", Status);
 		if (!NT_SUCCESS(Status))
 			leave;
 
@@ -974,6 +996,7 @@ NTSTATUS BasepCreateBnoIsolationObjectDirectories(IN HANDLE TokenHandle, IN OUT 
 			&HandleList[3],
 			&HandleList[4]);
 
+		dprintf(L"[0] BasepCreateBnoIsolationSymbolicLinks Status: 0x%08lx\n", Status);
 		if (!NT_SUCCESS(Status))
 			leave;
 
@@ -1002,6 +1025,103 @@ NTSTATUS BasepCreateBnoIsolationObjectDirectories(IN HANDLE TokenHandle, IN OUT 
 
 	return Status;
 }
+
+
+NTSTATUS ValidateAppXAliasFallback(LPCWSTR RawBaseImagePath, ExtendedAppExecutionAliasInfo* AppExecutionAliasInfo)
+{
+	NTSTATUS Status = 0;
+	HANDLE AliasFileHandle = NULL;
+	HANDLE RawBaseFileHandle = NULL;
+	LPWSTR ComparePackageName = NULL;
+	LONG ErrorCode = 0;
+	FILE_ID_INFO AliasFileIdInfo = { 0 };
+	FILE_ID_INFO RawBaseFileIdInfo = { 0 };
+	UINT32 PackageBufferLength = 128;
+	WCHAR PackageBuffer[128] = { 0 };
+
+	memset(PackageBuffer, 0, sizeof(PackageBuffer));
+	AliasFileHandle = CreateFileW(
+		AppExecutionAliasInfo->AppAliasBaseImagePath,
+		FILE_ATTRIBUTE_NORMAL,
+		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		NULL,
+		OPEN_EXISTING,
+		0,
+		NULL);
+
+	if (AliasFileHandle == INVALID_HANDLE_VALUE)
+	{
+		if (NtCurrentTeb()->LastErrorValue > 0)
+			return (USHORT)(NtCurrentTeb()->LastErrorValue) | 0xC0070000;
+		else
+			return NtCurrentTeb()->LastErrorValue;
+	}
+
+	RawBaseFileHandle = CreateFileW(
+		RawBaseImagePath,
+		FILE_ATTRIBUTE_NORMAL,
+		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		NULL,
+		OPEN_EXISTING,
+		0,
+		NULL);
+
+	if (RawBaseFileHandle != INVALID_HANDLE_VALUE
+		&& GetFileInformationByHandleEx(AliasFileHandle, FileIdInfo, &AliasFileIdInfo, sizeof(FILE_ID_INFO))
+		&& GetFileInformationByHandleEx(RawBaseFileHandle, FileIdInfo, &RawBaseFileIdInfo, sizeof(FILE_ID_INFO)))
+	{
+		if (memcmp(AliasFileIdInfo.FileId.Identifier, RawBaseFileIdInfo.FileId.Identifier, sizeof(FILE_ID_128)))
+		{
+			Status = STATUS_ACCESS_DENIED;
+			goto Cleanup;
+		}
+
+		if (AppExecutionAliasInfo->PackageFamilyName)
+		{
+			ComparePackageName = (LPWSTR)AppExecutionAliasInfo->PackageFamilyName;//???
+			ErrorCode = GetCurrentPackageFamilyName(&PackageBufferLength, PackageBuffer);
+		}
+		else if (AppExecutionAliasInfo->AppXPackageName)
+		{
+			ComparePackageName = (LPWSTR)AppExecutionAliasInfo->AppXPackageName;
+			ErrorCode = GetCurrentPackageFullName(&PackageBufferLength, PackageBuffer);
+
+		}
+		else
+		{
+			Status = 0xC007FFFF;
+			goto Cleanup;
+		}
+
+		//
+		// The process has no package identity.
+		// 
+		if (ErrorCode == APPMODEL_ERROR_NO_PACKAGE)
+		{
+			Status = STATUS_SUCCESS;
+			goto Cleanup;
+		}
+		else if (ErrorCode == ERROR_SUCCESS)
+		{
+			if (!_wcsnicmp(PackageBuffer, ComparePackageName, PackageBufferLength))
+				Status = STATUS_ACCESS_DENIED;
+			goto Cleanup;
+		}
+	}
+
+	if (NtCurrentTeb()->LastErrorValue > 0)
+		Status = (USHORT)(NtCurrentTeb()->LastErrorValue) | 0xC0070000;
+	else
+		Status = NtCurrentTeb()->LastErrorValue;
+
+Cleanup:
+	CloseHandle(AliasFileHandle);
+	if (RawBaseFileHandle != INVALID_HANDLE_VALUE)
+		CloseHandle(RawBaseFileHandle);
+
+	return Status;
+}
+
 
 NTSTATUS ValidateAppExecutionAliasRedirectPackageIdentity(IN HANDLE KeyHandle, IN ExtendedAppExecutionAliasInfo_New* AppExecutionAliasInfo)
 {
@@ -1064,6 +1184,7 @@ NTSTATUS GetAppExecutionAliasInfo(
 			TokenHandle,
 			NULL,
 			&Length);
+
 		if ((USHORT)ErrorStatus == ERROR_INSUFFICIENT_BUFFER)
 		{
 			AliasFullPath = (LPWSTR)RtlAllocateHeap(AliasHeap, 0, 2 * static_cast<SIZE_T>(Length));
@@ -1076,7 +1197,6 @@ NTSTATUS GetAppExecutionAliasInfo(
 				AliasFullPath,
 				&Length);
 		}
-		
 	}
 	else if (IsGetAppExecutionAliasPathPresent() && !SpecialAliasRedirectPackages)
 	{
@@ -1109,6 +1229,7 @@ NTSTATUS GetAppExecutionAliasInfo(
 	if (NT_SUCCESS(ErrorStatus))
 		ErrorStatus = LoadAppExecutionAliasInfoEx(AliasFullPath, TokenHandle, ulppExtendedAppExecutionAliasInfo);
 
+	dprintf(L"LoadAppExecutionAliasInfoEx : 0x%08lx\n", ErrorStatus);
 	if (AliasFullPath)
 		RtlFreeHeap(AliasHeap, 0, AliasFullPath);
 	return ErrorStatus;
@@ -1130,6 +1251,7 @@ NTSTATUS LoadAppExecutionAliasInfoForExecutable(
 	ExtendedAppExecutionAliasInfo* SpecialAppAliasInfo = NULL;
 	wchar_t* SpecialAliasRedirectPackages = NULL;
 	wchar_t* Context = NULL;
+	
 
 	AliasRedirectEnabled = 0;
 	ReturnedLength = 0;
@@ -1205,7 +1327,6 @@ NTSTATUS LoadAppExecutionAliasInfoForExecutable(
 			TokenHandle,
 			HeapHandle,
 			lppAppExecutionAliasInfo);
-
 	Context = NULL;
 	SpecialAliasRedirectPackages = wcstok_s(AliasPackagesBuffer, L";", &Context);
 	do
@@ -1217,6 +1338,7 @@ NTSTATUS LoadAppExecutionAliasInfoForExecutable(
 		}
 
 		SpecialAppAliasInfo = NULL;
+
 		if (GetAppExecutionAliasInfo(
 			Win32ImagePath,
 			SpecialAliasRedirectPackages,// SpecialAliasRedirectPackages in
@@ -1226,6 +1348,7 @@ NTSTATUS LoadAppExecutionAliasInfoForExecutable(
 		{
 			if (!SpecialAppAliasInfo)
 				continue;
+
 			if (CompareStringOrdinal(SpecialAliasRedirectPackages, -1, SpecialAppAliasInfo->AppExecutionAliasRedirectPackages, -1, TRUE) == CSTR_EQUAL)
 			{
 				Status = 0;
@@ -1235,10 +1358,10 @@ NTSTATUS LoadAppExecutionAliasInfoForExecutable(
 		}
 		if (SpecialAppAliasInfo)
 			FreeAppExecutionAliasInfoEx(SpecialAppAliasInfo);
+
 		SpecialAliasRedirectPackages = wcstok_s(0, L";", &Context);
 	} while (true);
 	
-
 	return Status;
 }
 
@@ -1350,110 +1473,78 @@ VOID BasepAddToOrUpdateAttributesList(
 	return;
 }
 
-NTSTATUS ValidateAppXAliasFallback(LPCWSTR RawBaseImagePath, ExtendedAppExecutionAliasInfo* AppExecutionAliasInfo)
-{
-	NTSTATUS Status = 0;
-	HANDLE AliasFileHandle = NULL;
-	HANDLE RawBaseFileHandle = NULL;
-	LPWSTR ComparePackageName = NULL;
-	LONG ErrorCode = 0;
-	FILE_ID_INFO AliasFileIdInfo = { 0 };
-	FILE_ID_INFO RawBaseFileIdInfo = { 0 };
-	UINT32 PackageBufferLength = 128;
-	WCHAR PackageBuffer[128] = { 0 };
-
-	memset(PackageBuffer, 0, sizeof(PackageBuffer));
-	AliasFileHandle = CreateFileW(
-		AppExecutionAliasInfo->AppAliasBaseImagePath, 
-		FILE_ATTRIBUTE_NORMAL, 
-		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-		NULL, 
-		OPEN_EXISTING,
-		0, 
-		NULL);
-
-	if (AliasFileHandle == INVALID_HANDLE_VALUE)
-	{
-		if (NtCurrentTeb()->LastErrorValue > 0)
-			return (USHORT)(NtCurrentTeb()->LastErrorValue) | 0xC0070000;
-		else
-			return NtCurrentTeb()->LastErrorValue;
-	}
-
-	RawBaseFileHandle = CreateFileW(
-		RawBaseImagePath,
-		FILE_ATTRIBUTE_NORMAL,
-		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-		NULL,
-		OPEN_EXISTING,
-		0,
-		NULL);
-
-
-	if (RawBaseFileHandle != INVALID_HANDLE_VALUE
-		&& GetFileInformationByHandleEx(AliasFileHandle, FileIdInfo, &AliasFileIdInfo, sizeof(FILE_ID_INFO))
-		&& GetFileInformationByHandleEx(RawBaseFileHandle, FileIdInfo, &RawBaseFileIdInfo, sizeof(FILE_ID_INFO)))
-	{
-		if (AliasFileIdInfo.FileId.Identifier != RawBaseFileIdInfo.FileId.Identifier)
-		{
-			Status = STATUS_ACCESS_DENIED;
-			goto Cleanup;
-		}
-
-		if (AppExecutionAliasInfo->PackageFamilyName)
-		{
-			ComparePackageName = (LPWSTR)AppExecutionAliasInfo->PackageFamilyName;//???
-			ErrorCode = GetCurrentPackageFamilyName(&PackageBufferLength, PackageBuffer);
-		}
-		else if(AppExecutionAliasInfo->AppXPackageName)
-		{
-			ComparePackageName = (LPWSTR)AppExecutionAliasInfo->AppXPackageName;
-			ErrorCode = GetCurrentPackageFullName(&PackageBufferLength, PackageBuffer);
-			
-		}
-		else
-		{
-			Status = 0xC007FFFF;
-			goto Cleanup;
-		}
-		
-		//
-		// The process has no package identity.
-		// 
-		if (ErrorCode == APPMODEL_ERROR_NO_PACKAGE)
-		{
-			Status = STATUS_SUCCESS;
-			goto Cleanup;
-		}
-		else if (ErrorCode == ERROR_SUCCESS)
-		{
-			if (!_wcsnicmp(PackageBuffer, ComparePackageName, PackageBufferLength))
-				Status = STATUS_ACCESS_DENIED;
-			goto Cleanup;
-		}
-	}
-
-	if (NtCurrentTeb()->LastErrorValue > 0)
-		Status = (USHORT)(NtCurrentTeb()->LastErrorValue) | 0xC0070000;
-	else
-		Status = NtCurrentTeb()->LastErrorValue;
-
-Cleanup:
-	CloseHandle(AliasFileHandle);
-	if (RawBaseFileHandle != INVALID_HANDLE_VALUE)
-		CloseHandle(RawBaseFileHandle);
-
-	return Status;
-}
-
 NTSTATUS BasepFreeActivationTokenInfo(PACTIVATION_TOKEN_INFO lpActivationTokenInfo)
 {
 	if (lpActivationTokenInfo->ActivationTokenHandle)
 		NtClose(lpActivationTokenInfo->ActivationTokenHandle);
 
 	if (lpActivationTokenInfo->PackageBnoIsolationPrefix)
-		HeapFree(RtlProcessHeap(), 0, lpActivationTokenInfo->PackageBnoIsolationPrefix);
+		RtlFreeHeap(RtlProcessHeap(), 0, lpActivationTokenInfo->PackageBnoIsolationPrefix);
 
 	*lpActivationTokenInfo = { 0 };
 	return 0;
+}
+
+namespace wil::details
+{
+	VOID CloseWintrustData(PWINTRUST_DATA pWinTrustData)
+	{
+		GUID CloseActionGuid = WINTRUST_ACTION_GENERIC_VERIFY_V2;
+		pWinTrustData->dwStateAction = WTD_STATEACTION_CLOSE;
+		WinVerifyTrust((HWND)INVALID_HANDLE_VALUE, &CloseActionGuid, pWinTrustData);
+		return;
+	}
+}
+// 小子、老表们，还记得这个函数很容易被欺骗不？
+// 如果只针对 AppX Package 检查的话，感觉不好欺骗，也没什么用处
+NTSTATUS AppXCheckPplSupport(LPCWSTR szFilePath, BOOL* IsPplSupported)
+{
+	CERT_CHAIN_PARA CertChainPara = { 0 };
+	WINTRUST_DATA WinTrustData = { 0 };
+	WINTRUST_FILE_INFO FileData = { 0 };
+	WTD_GENERIC_CHAIN_POLICY_DATA PolicyData = { 0 };
+	WTD_GENERIC_CHAIN_POLICY_CREATE_INFO PolicyCreateInfo = { 0 };
+	const GUID WinVerifyGuid = WINTRUST_ACTION_GENERIC_CHAIN_VERIFY;
+	static const char* EnhancedOidIdentifier = szOID_PROTECTED_PROCESS_LIGHT_SIGNER;
+
+	*IsPplSupported = FALSE;
+	memset(&WinTrustData, 0, sizeof(WinTrustData));
+
+	WinTrustData.fdwRevocationChecks = FALSE;
+	WinTrustData.pFile = &FileData;
+	WinTrustData.cbStruct = sizeof(WinTrustData);
+	WinTrustData.dwUIChoice = WTD_UI_NONE;
+	WinTrustData.pPolicyCallbackData = &PolicyData;
+	WinTrustData.dwStateAction = WTD_STATEACTION_VERIFY;
+	WinTrustData.dwProvFlags = WTD_CACHE_ONLY_URL_RETRIEVAL | WTD_REVOCATION_CHECK_NONE;
+
+	FileData.cbStruct = sizeof(FileData);
+	FileData.hFile = NULL;
+	FileData.pcwszFilePath = szFilePath;
+
+	PolicyData.cbSize = sizeof(PolicyData);
+	PolicyData.pSignerChainInfo = &PolicyCreateInfo;
+
+	PolicyCreateInfo.cbSize = sizeof(PolicyCreateInfo);
+	PolicyCreateInfo.pvReserved = 0;
+	PolicyCreateInfo.pChainPara = &CertChainPara;
+	PolicyCreateInfo.hChainEngine = HCCE_LOCAL_MACHINE;
+	PolicyCreateInfo.dwFlags = CERT_CHAIN_REVOCATION_CHECK_CACHE_ONLY | CERT_CHAIN_REVOCATION_CHECK_END_CERT | CERT_CHAIN_CACHE_ONLY_URL_RETRIEVAL;//CERT_CHAIN_FIND_BY_ISSUER_CACHE_ONLY_URL_FLAG;
+
+	CertChainPara.cbSize = sizeof(CertChainPara);
+	CertChainPara.RequestedUsage.dwType = USAGE_MATCH_TYPE_AND;
+	CertChainPara.RequestedUsage.Usage.cUsageIdentifier = 1;
+	CertChainPara.RequestedUsage.Usage.rgpszUsageIdentifier = (LPSTR*)&EnhancedOidIdentifier;
+	
+	if(!WinVerifyTrust((HWND)INVALID_HANDLE_VALUE,(GUID*)&WinVerifyGuid, &WinTrustData))
+		*IsPplSupported = TRUE;
+
+	wil::details::CloseWintrustData(&WinTrustData);
+
+	return STATUS_SUCCESS;;
+}
+
+NTSTATUS BasepCheckPplSupport(LPCWSTR szFilePath, BOOL* IsPplSupported)
+{
+	return AppXCheckPplSupport(szFilePath, IsPplSupported);
 }

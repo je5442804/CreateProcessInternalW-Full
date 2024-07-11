@@ -2,36 +2,14 @@
 #include <ntstatus.h>
 
 #pragma once
-#ifndef SW3_HEADER_H_
-#define SW3_HEADER_H_
+#ifndef SYSCALL_HEADER_H_
+#define SYSCALL_HEADER_H_
 
 #include <windows.h>
-
 #include <iostream>
 #include "otherapi.hpp"
 
-#define SW3_SEED 0x61EA92A9
-#define SW3_ROL8(v) (v << 8 | v >> 24)
-#define SW3_ROR8(v) (v >> 8 | v << 24)
-#define SW3_ROX8(v) ((SW3_SEED % 2) ? SW3_ROL8(v) : SW3_ROR8(v))
-#define SW3_MAX_ENTRIES 500
-#define SW3_RVA2VA(Type, DllBase, Rva) (Type)((ULONG_PTR) DllBase + Rva)
-
-typedef struct _SW3_SYSCALL_ENTRY
-{
-	DWORD Hash;
-	DWORD Address;
-	PVOID SyscallAddress;
-} SW3_SYSCALL_ENTRY, * PSW3_SYSCALL_ENTRY;
-
-typedef struct _SW3_SYSCALL_LIST
-{
-	DWORD Count;
-	SW3_SYSCALL_ENTRY Entries[SW3_MAX_ENTRIES];
-} SW3_SYSCALL_LIST, * PSW3_SYSCALL_LIST;
-
-DWORD SW3_HashSyscall(PCSTR FunctionName);
-BOOL SW3_PopulateSyscallList();
+#define RVA2VA(Type, DllBase, Rva) (Type)((ULONG_PTR) DllBase + Rva)
 
 extern	PBASE_STATIC_SERVER_DATA BaseStaticServerData;
 extern	ULONG KernelBaseGlobalData;
@@ -43,6 +21,7 @@ extern	AppModelPolicy_GetPolicy_Internal_ AppModelPolicy_GetPolicy_Internal;
 extern	ApiSetCheckFunction IsBasepConstructSxsCreateProcessMessagePresent;
 extern	ApiSetCheckFunction IsBasepInitAppCompatDataPresent;
 extern	ApiSetCheckFunction IsBasepAppXExtensionPresent;
+extern  ApiSetCheckFunction IsBasepCheckPplSupportPresent;
 extern	ApiSetCheckFunction IsBasepGetPackagedAppInfoForFilePresent;
 extern	ApiSetCheckFunction IsBasepGetAppCompatDataPresent;
 extern	ApiSetCheckFunction IsBaseCheckElevationPresent;
@@ -123,11 +102,10 @@ extern	NtVdm64CreateProcessInternalW_ NtVdm64CreateProcessInternalW;
 extern	HMODULE Ntdll;
 extern	HMODULE Kernel32;
 extern	HMODULE KernelBase;
+
 extern	USHORT NtdllRevision;
 extern	USHORT NtdllBuildNumber;
-EXTERN_C DWORD SW3_GetSyscallNumber(DWORD FunctionHash);
-EXTERN_C PVOID SW3_GetSyscallAddress(DWORD FunctionHash);
-EXTERN_C PVOID internal_cleancall_wow64_gate(VOID);
+
 void init();
 void init2();
 #endif

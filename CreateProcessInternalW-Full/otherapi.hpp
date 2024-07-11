@@ -34,6 +34,37 @@
 #define BasepQueryAppCompatString L"BasepQueryAppCompat"
 #define BasepGetAppCompatDataString L"BasepGetAppCompatData"
 
+#define szOID_KP_KERNEL_MODE_CODE_SIGNING "1.3.6.1.4.1.311.61.1.1"
+#define szOID_KP_KERNEL_MODE_TRUSTED_BOOT_SIGNING "1.3.6.1.4.1.311.61.4.1"
+#define szOID_REVOKED_LIST_SIGNER "1.3.6.1.4.1.311.10.3.19"
+#define szOID_WINDOWS_KITS_SIGNER "1.3.6.1.4.1.311.10.3.20"
+#define szOID_WINDOWS_RT_SIGNER "1.3.6.1.4.1.311.10.3.21"
+#define szOID_PROTECTED_PROCESS_LIGHT_SIGNER "1.3.6.1.4.1.311.10.3.22"
+#define szOID_WINDOWS_TCB_SIGNER "1.3.6.1.4.1.311.10.3.23"
+#define szOID_PROTECTED_PROCESS_SIGNER "1.3.6.1.4.1.311.10.3.24"
+#define szOID_WINDOWS_THIRD_PARTY_COMPONENT_SIGNER "1.3.6.1.4.1.311.10.3.25"
+#define szOID_WINDOWS_SOFTWARE_EXTENSION_SIGNER "1.3.6.1.4.1.311.10.3.26"
+#define szOID_DISALLOWED_LIST "1.3.6.1.4.1.311.10.3.30"
+#define szOID_PIN_RULES_SIGNER "1.3.6.1.4.1.311.10.3.31"
+#define szOID_PIN_RULES_CTL "1.3.6.1.4.1.311.10.3.32"
+#define szOID_PIN_RULES_EXT "1.3.6.1.4.1.311.10.3.33"
+#define szOID_PIN_RULES_DOMAIN_NAME "1.3.6.1.4.1.311.10.3.34"
+#define szOID_PIN_RULES_LOG_END_DATE_EXT "1.3.6.1.4.1.311.10.3.35"
+#define szOID_IUM_SIGNING "1.3.6.1.4.1.311.10.3.37"
+#define szOID_EV_WHQL_CRYPTO "1.3.6.1.4.1.311.10.3.39"
+#define szOID_BIOMETRIC_SIGNING "1.3.6.1.4.1.311.10.3.41"
+#define szOID_ENCLAVE_SIGNING "1.3.6.1.4.1.311.10.3.42"
+#define szOID_SYNC_ROOT_CTL_EXT "1.3.6.1.4.1.311.10.3.50"
+#define szOID_HPKP_DOMAIN_NAME_CTL "1.3.6.1.4.1.311.10.3.60"
+#define szOID_HPKP_HEADER_VALUE_CTL "1.3.6.1.4.1.311.10.3.61"
+#define szOID_KP_KERNEL_MODE_HAL_EXTENSION_SIGNING "1.3.6.1.4.1.311.61.5.1"
+#define szOID_WINDOWS_STORE_SIGNER "1.3.6.1.4.1.311.76.3.1"
+#define szOID_DYNAMIC_CODE_GEN_SIGNER "1.3.6.1.4.1.311.76.5.1"
+#define szOID_MICROSOFT_PUBLISHER_SIGNER "1.3.6.1.4.1.311.76.8.1"
+#define szOID_YESNO_TRUST_ATTR "1.3.6.1.4.1.311.10.4.1"
+#define szOID_SITE_PIN_RULES_INDEX_ATTR "1.3.6.1.4.1.311.10.4.2"
+#define szOID_SITE_PIN_RULES_FLAGS_ATTR "1.3.6.1.4.1.311.10.4.3"
+
 void CreateInfoOutPut(PS_CREATE_INFO CreateInfo);
 void SectionImageInfomationOutPut(SECTION_IMAGE_INFORMATION SectionImageInfomation);
 void BaseCreateProcessMessageOutPut(BASE_SXS_CREATEPROCESS_MSG BaseCreateProcessMessageSxs);
@@ -502,9 +533,9 @@ typedef BOOL(WINAPI* NtVdm64CreateProcessInternalW_)(
 	LPPROCESS_INFORMATION lpProcessInformation,
 	PHANDLE hRestrictedUserToken
 	);
+
 //AppXPostSuccessExtension
 typedef NTSTATUS(WINAPI* BasepPostSuccessAppXExtension_)(HANDLE ProcessHandle, PAPPX_PROCESS_CONTEXT AppXContext);
-
 
 typedef NTSTATUS(WINAPI* CompletePackagedProcessCreationEx_)(
 	HANDLE ProcessHandle,
@@ -544,11 +575,8 @@ typedef VOID(WINAPI* PerformAppxLicenseRundownEx_)(
 	);
 
 typedef VOID(WINAPI* BasepReleasePackagedAppInfo_)(ExtendedPackagedAppContext::ExtendedPackagedAppContext* ExtendedAppContext);
-
-typedef VOID(WINAPI* FreeAppExecutionAliasInfoEx_)(
-	ExtendedAppExecutionAliasInfo* AppExecutionAliasInfo
-	);
+typedef VOID(WINAPI* FreeAppExecutionAliasInfoEx_)(ExtendedAppExecutionAliasInfo* AppExecutionAliasInfo);
 typedef BOOL(WINAPI* BaseDestroyVDMEnvironment_)(IN PANSI_STRING AnsiEnv, IN PUNICODE_STRING UnicodeEnv);
 
-
 NTSTATUS BasepFreeActivationTokenInfo(PACTIVATION_TOKEN_INFO lpActivationTokenInfo);
+NTSTATUS BasepCheckPplSupport(LPCWSTR szFilePath, BOOL* IsPplSupported);

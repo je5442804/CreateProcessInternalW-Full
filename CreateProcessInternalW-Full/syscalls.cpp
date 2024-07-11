@@ -4,10 +4,6 @@
 #include "structs.hpp"
 #include <stdio.h>
 
-#define JUMPER
-
-SW3_SYSCALL_LIST SW3_SyscallList;
-
 PBASE_STATIC_SERVER_DATA BaseStaticServerData;
 ULONG KernelBaseGlobalData;
 USHORT OSBuildNumber;
@@ -15,33 +11,34 @@ HANDLE ConhostConsoleHandle;
 
 AppModelPolicy_GetPolicy_Internal_ AppModelPolicy_GetPolicy_Internal;
 
-ApiSetCheckFunction IsBasepConstructSxsCreateProcessMessagePresent;
-ApiSetCheckFunction IsBasepInitAppCompatDataPresent;
-ApiSetCheckFunction IsBasepAppXExtensionPresent;
-ApiSetCheckFunction IsBasepGetPackagedAppInfoForFilePresent;
-ApiSetCheckFunction IsBasepGetAppCompatDataPresent;
-ApiSetCheckFunction IsBaseCheckElevationPresent;
-ApiSetCheckFunction IsBaseWriteErrorElevationRequiredEventPresent;
-ApiSetCheckFunction IsBasepCheckWebBladeHashesPresent;
-ApiSetCheckFunction IsBasepQueryModuleChpeSettingsPresent;
-ApiSetCheckFunction IsBasepIsProcessAllowedPresent;
-ApiSetCheckFunction IsBasepQueryAppCompatPresent;
-ApiSetCheckFunction IsBasepAppContainerEnvironmentExtensionPresent;
-ApiSetCheckFunction IsBasepCheckWinSaferRestrictionsPresent;
-ApiSetCheckFunction IsBasepFreeAppCompatDataPresent;
-ApiSetCheckFunction IsBasepReleaseSxsCreateProcessUtilityStructPresent;
-ApiSetCheckFunction IsBasepProcessInvalidImagePresent;
-ApiSetCheckFunction IsBaseElevationPostProcessingPresent;
-ApiSetCheckFunction IsBaseDestroyVDMEnvironmentPresent;
-ApiSetCheckFunction IsBaseUpdateVDMEntryPresent;
-ApiSetCheckFunction IsBaseIsDosApplicationPresent;
-ApiSetCheckFunction IsNtVdm64CreateProcessInternalWPresent;
-ApiSetCheckFunction IsRaiseInvalid16BitExeErrorPresent;
+ApiSetCheckFunction IsBasepConstructSxsCreateProcessMessagePresent = 0;
+ApiSetCheckFunction IsBasepInitAppCompatDataPresent = 0;
+ApiSetCheckFunction IsBasepAppXExtensionPresent = 0;
+ApiSetCheckFunction IsBasepCheckPplSupportPresent = 0;
+ApiSetCheckFunction IsBasepGetPackagedAppInfoForFilePresent = 0;
+ApiSetCheckFunction IsBasepGetAppCompatDataPresent = 0;
+ApiSetCheckFunction IsBaseCheckElevationPresent = 0;
+ApiSetCheckFunction IsBaseWriteErrorElevationRequiredEventPresent = 0;
+ApiSetCheckFunction IsBasepCheckWebBladeHashesPresent = 0;
+ApiSetCheckFunction IsBasepQueryModuleChpeSettingsPresent = 0;
+ApiSetCheckFunction IsBasepIsProcessAllowedPresent = 0;
+ApiSetCheckFunction IsBasepQueryAppCompatPresent = 0;
+ApiSetCheckFunction IsBasepAppContainerEnvironmentExtensionPresent = 0;
+ApiSetCheckFunction IsBasepCheckWinSaferRestrictionsPresent = 0;
+ApiSetCheckFunction IsBasepFreeAppCompatDataPresent = 0;
+ApiSetCheckFunction IsBasepReleaseSxsCreateProcessUtilityStructPresent = 0;
+ApiSetCheckFunction IsBasepProcessInvalidImagePresent = 0;
+ApiSetCheckFunction IsBaseElevationPostProcessingPresent = 0;
+ApiSetCheckFunction IsBaseDestroyVDMEnvironmentPresent = 0;
+ApiSetCheckFunction IsBaseUpdateVDMEntryPresent = 0;
+ApiSetCheckFunction IsBaseIsDosApplicationPresent = 0;
+ApiSetCheckFunction IsNtVdm64CreateProcessInternalWPresent = 0;
+ApiSetCheckFunction IsRaiseInvalid16BitExeErrorPresent = 0;
 
-ApiSetCheckFunction IsCheckAppXPackageBreakawayPresent;
-ApiSetCheckFunction IsGetAppExecutionAliasPathPresent;
-ApiSetCheckFunction IsLoadAppExecutionAliasInfoExPresent;
-ApiSetCheckFunction IsGetAppExecutionAliasPathExPresent;
+ApiSetCheckFunction IsCheckAppXPackageBreakawayPresent = 0;
+ApiSetCheckFunction IsGetAppExecutionAliasPathPresent = 0;
+ApiSetCheckFunction IsLoadAppExecutionAliasInfoExPresent = 0;
+ApiSetCheckFunction IsGetAppExecutionAliasPathExPresent = 0;
 
 
 BasepConvertWin32AttributeList_ BasepConvertWin32AttributeList_inline;
@@ -103,65 +100,6 @@ DWORD SizeOfKernel32;
 DWORD SizeOfKernelBase = 0;
 USHORT NtdllRevision;
 USHORT NtdllBuildNumber;
-DWORD SW3_HashSyscall(PCSTR FunctionName)
-{
-    DWORD i = 0;
-    DWORD Hash = SW3_SEED;
-
-    while (FunctionName[i])
-    {
-        WORD PartialName = *(WORD*)((ULONG_PTR)FunctionName + i++);
-        Hash ^= PartialName + SW3_ROR8(Hash);
-    }
-
-    return Hash;
-}
-
-PVOID SC(PVOID NtApiAddress)
-{
-    DWORD searchLimit = 512;
-    PVOID SyscallAddress;
-    BYTE syscall_code[] = { 0x0f, 0x05, 0xc3 };
-    ULONGLONG distance_to_syscall = 0x12;//ULONG
-    if (OSBuildNumber != 0 && OSBuildNumber < 10586) //Beta 10525
-    {
-        distance_to_syscall = 0x08;
-    }
-    // we don't really care if there is a 'jmp' between
-    // NtApiAddress and the 'syscall; ret' instructions
-    SyscallAddress = SW3_RVA2VA(PVOID, NtApiAddress, distance_to_syscall);
-
-    if (!memcmp((PVOID)syscall_code, SyscallAddress, sizeof(syscall_code)))
-    {
-        // we can use the original code for this system call :)
-        return SyscallAddress;
-    }
-    // the 'syscall; ret' intructions have not been found,
-    // we will try to use one near it, similarly to HalosGate
-    for (ULONGLONG num_jumps = 1; num_jumps < searchLimit; num_jumps++)
-    {
-        // let's try with an Nt* API below our syscall
-        SyscallAddress = SW3_RVA2VA(
-            PVOID,
-            NtApiAddress,
-            distance_to_syscall + num_jumps * 0x20);
-        if (!memcmp((PVOID)syscall_code, SyscallAddress, sizeof(syscall_code)))
-        {
-            return SyscallAddress;
-        }
-
-        // let's try with an Nt* API above our syscall
-        SyscallAddress = SW3_RVA2VA(
-            PVOID,
-            NtApiAddress,
-            distance_to_syscall - num_jumps * 0x20);
-        if (!memcmp((PVOID)syscall_code, SyscallAddress, sizeof(syscall_code)))
-        {
-            return SyscallAddress;
-        }
-    }
-    return NULL;
-}
 
 //PVOID Ntdll, DWORD SizeOfNtdll, PVOID Kernel32, DWORD SizeofKernel32, PVOID KernelBase, DWORD SizeofKernelBase
 int GetGloablVariable()
@@ -267,7 +205,6 @@ void GetUnexportFunction(DWORD SizeofKernelBase)
 
     for (DWORD i = 0; i < SizeofKernelBase - 0x100; i++)
     {
-
         if (!memcmp(signaturecode3, (char*)KernelBase + i, 6) && !memcmp((char*)signaturecode3 + 6, (char*)KernelBase + i + 9, 13))
         {
             BYTE temp3[] = { 0x48,0x8D,0x54,0x24,0x30,0xC6,0x44,0x24,0x30,0x00,0x48,0x8D,0x0D };
@@ -282,7 +219,7 @@ void GetUnexportFunction(DWORD SizeofKernelBase)
                     ULONG RVA = (ULONG)(Address)+*(ULONG*)((char*)KernelBase + i + j + 13);
                     // (char*)KernelBase + i + j + 17 + *(DWORD*)((char*)KernelBase + i + j + 13)
                     PUNICODE_STRING ApiSetPresenceAddress = (PUNICODE_STRING)((ULONG_PTR)RVA + PtrHigh32(Address));
-                    //dprintf(L"ApiSetPresenceAddress = 0x%p -- Function = 0x%p\n", ApiSetPresenceAddress, (char*)KernelBase + i);
+                    //dprintf(L"Length: %ld, Name: %ls -- Function = 0x%p\n", ApiSetPresenceAddress->Length, ApiSetPresenceAddress->Buffer, (char*)KernelBase + i);
                     if (!IsCheckAppXPackageBreakawayPresent && ApiSetPresenceAddress->Length == 68 && !memcmp(ApiSetPresenceAddress->Buffer, L"ext-ms-win-appmodel-daxcore-l1-1-0", 68))
                     {
                         IsCheckAppXPackageBreakawayPresent = (ApiSetCheckFunction)((char*)KernelBase + i);
@@ -317,19 +254,23 @@ void GetUnexportFunction(DWORD SizeofKernelBase)
                         break;
                     }
 
-                    if (!IsBasepProcessInvalidImagePresent && ApiSetPresenceAddress->Length == 84 && !memcmp(ApiSetPresenceAddress->Buffer, L"ext-ms-win-kernelbase-processthread-l1-1-2", 84))
+                    if (!IsBasepGetPackagedAppInfoForFilePresent && ApiSetPresenceAddress->Length == 84 && !memcmp(ApiSetPresenceAddress->Buffer, L"ext-ms-win-kernelbase-processthread-l1-1-2", 84))
                     {
                         IsBasepGetPackagedAppInfoForFilePresent = (ApiSetCheckFunction)((char*)KernelBase + i);
                         dprintf(L"[+] IsBasepGetPackagedAppInfoForFilePresent: 0x%p\n", IsBasepGetPackagedAppInfoForFilePresent);
                         break;
                     }
+
+                    if (!IsBasepCheckPplSupportPresent && ApiSetPresenceAddress->Length == 84 && !memcmp(ApiSetPresenceAddress->Buffer, L"ext-ms-win-kernelbase-processthread-l1-1-3", 84))
+                    {
+                        IsBasepCheckPplSupportPresent = (ApiSetCheckFunction)((char*)KernelBase + i);
+                        dprintf(L"[+] IsBasepCheckPplSupportPresent: 0x%p\n", IsBasepCheckPplSupportPresent);
+                        break;
+                    }
                 }
             }
         }
-        if (!IsBasepGetPackagedAppInfoForFilePresent)
-            IsBasepGetPackagedAppInfoForFilePresent = IsBasepProcessInvalidImagePresent;
-        if (!IsGetAppExecutionAliasPathExPresent)
-            IsGetAppExecutionAliasPathExPresent = IsBasepProcessInvalidImagePresent;
+      
 
         if (!BasepConvertWin32AttributeList_inline && !memcmp(signaturecode5, (char*)KernelBase + i, sizeof(signaturecode5)))
         {
@@ -397,13 +338,17 @@ void GetUnexportFunction(DWORD SizeofKernelBase)
         }
         */
     }
+
+    if (!IsBasepGetPackagedAppInfoForFilePresent)
+        IsBasepGetPackagedAppInfoForFilePresent = IsBasepProcessInvalidImagePresent;
+    if (!IsGetAppExecutionAliasPathExPresent)
+        IsGetAppExecutionAliasPathExPresent = IsBasepProcessInvalidImagePresent;
+    if (!IsBasepCheckPplSupportPresent)
+        IsBasepCheckPplSupportPresent = IsBasepProcessInvalidImagePresent;
 }
-BOOL SW3_PopulateSyscallList()
+BOOL NoMore()
 {
-    // Return early if the list is already populated.
-    if (SW3_SyscallList.Count) return TRUE;
-    PPEB Peb = (PPEB)__readgsqword(0x60);
-    PPEB_LDR_DATA Ldr = Peb->Ldr;
+    PPEB_LDR_DATA Ldr = NtCurrentPeb()->Ldr;
     PIMAGE_EXPORT_DIRECTORY ExportDirectory = NULL;
     PIMAGE_EXPORT_DIRECTORY ExportDirectoryNtdll = NULL;
     PVOID DllBase = NULL;
@@ -420,15 +365,15 @@ BOOL SW3_PopulateSyscallList()
     {
         DllBase = LdrEntry->DllBase;
         PIMAGE_DOS_HEADER DosHeader = (PIMAGE_DOS_HEADER)DllBase;
-        PIMAGE_NT_HEADERS NtHeaders = SW3_RVA2VA(PIMAGE_NT_HEADERS, DllBase, DosHeader->e_lfanew);
+        PIMAGE_NT_HEADERS NtHeaders = RVA2VA(PIMAGE_NT_HEADERS, DllBase, DosHeader->e_lfanew);
         PIMAGE_DATA_DIRECTORY DataDirectory = (PIMAGE_DATA_DIRECTORY)NtHeaders->OptionalHeader.DataDirectory;
 
         DWORD VirtualAddress = DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
         if (VirtualAddress == 0) continue;
 
-        ExportDirectory = (PIMAGE_EXPORT_DIRECTORY)SW3_RVA2VA(ULONG_PTR, DllBase, VirtualAddress);
+        ExportDirectory = (PIMAGE_EXPORT_DIRECTORY)RVA2VA(ULONG_PTR, DllBase, VirtualAddress);
         // If this is NTDLL.dll, exit loop.
-        PCHAR DllName = SW3_RVA2VA(PCHAR, DllBase, ExportDirectory->Name);
+        PCHAR DllName = RVA2VA(PCHAR, DllBase, ExportDirectory->Name);
 
         if ((*(ULONG*)DllName | 0x20202020) == 'nrek')
         {
@@ -458,7 +403,7 @@ BOOL SW3_PopulateSyscallList()
     ExportDirectory = ExportDirectoryNtdll;
     if (!ExportDirectory)
         return FALSE;
-    OSBuildNumber = Peb->OSBuildNumber;
+    OSBuildNumber = NtCurrentPeb()->OSBuildNumber;
     PVOID Address = FindResourceW(Ntdll, MAKEINTRESOURCEW(1), RT_VERSION);
     if (Address)
     {
@@ -470,107 +415,10 @@ BOOL SW3_PopulateSyscallList()
 
     GetGloablVariable();
     GetUnexportFunction(SizeOfKernelBase);
-    DWORD NumberOfNames = ExportDirectory->NumberOfNames;
-    PDWORD Functions = SW3_RVA2VA(PDWORD, Ntdll, ExportDirectory->AddressOfFunctions);
-    PDWORD Names = SW3_RVA2VA(PDWORD, Ntdll, ExportDirectory->AddressOfNames);
-    PWORD Ordinals = SW3_RVA2VA(PWORD, Ntdll, ExportDirectory->AddressOfNameOrdinals);
-
-    // Populate SW3_SyscallList with unsorted Zw* entries.
-    DWORD x = 0;
-    PSW3_SYSCALL_ENTRY Entries = SW3_SyscallList.Entries;
-
-    do
-    {
-        PCHAR FunctionName = SW3_RVA2VA(PCHAR, Ntdll, Names[NumberOfNames - 1]);
-
-        // Is this a system call?
-        if (*(USHORT*)FunctionName == 0x775a)
-        {
-            Entries[x].Hash = SW3_HashSyscall(FunctionName);
-            Entries[x].Address = Functions[Ordinals[NumberOfNames - 1]];
-            Entries[x].SyscallAddress = SC(SW3_RVA2VA(PVOID, Ntdll, Entries[x].Address));
-
-            x++;
-            if (x == SW3_MAX_ENTRIES) break;
-        }
-    } while (--NumberOfNames);
-
-    // Save total number of system calls found.
-    SW3_SyscallList.Count = x;
-
-    // Sort the list by address in ascending order.
-    for (DWORD i = 0; i < SW3_SyscallList.Count - 1; i++)
-    {
-        for (DWORD j = 0; j < SW3_SyscallList.Count - i - 1; j++)
-        {
-            if (Entries[j].Address > Entries[j + 1].Address)
-            {
-                // Swap entries.
-                SW3_SYSCALL_ENTRY TempEntry = { 0 };
-
-                TempEntry.Hash = Entries[j].Hash;
-                TempEntry.Address = Entries[j].Address;
-                TempEntry.SyscallAddress = Entries[j].SyscallAddress;
-
-                Entries[j].Hash = Entries[j + 1].Hash;
-                Entries[j].Address = Entries[j + 1].Address;
-                Entries[j].SyscallAddress = Entries[j + 1].SyscallAddress;
-
-                Entries[j + 1].Hash = TempEntry.Hash;
-                Entries[j + 1].Address = TempEntry.Address;
-                Entries[j + 1].SyscallAddress = TempEntry.SyscallAddress;
-            }
-        }
-    }
 
     return TRUE;
 }
 
-EXTERN_C DWORD SW3_GetSyscallNumber(DWORD FunctionHash)
-{
-    // Ensure SW3_SyscallList is populated.
-    if (!SW3_PopulateSyscallList())
-        return 0;
-    for (DWORD i = 0; i < SW3_SyscallList.Count; i++)
-    {
-        if (FunctionHash == SW3_SyscallList.Entries[i].Hash)
-        {
-            return i;
-        }
-    }
-
-    return 0;
-}
-
-EXTERN_C PVOID SW3_GetSyscallAddress(DWORD FunctionHash)
-{
-    // Ensure SW3_SyscallList is populated.
-    if (!SW3_PopulateSyscallList()) return NULL;
-
-    for (DWORD i = 0; i < SW3_SyscallList.Count; i++)
-    {
-        if (FunctionHash == SW3_SyscallList.Entries[i].Hash)
-        {
-            return SW3_SyscallList.Entries[i].SyscallAddress;
-        }
-    }
-
-    return NULL;
-}
-
-EXTERN_C PVOID SW3_GetRandomSyscallAddress(DWORD FunctionHash)
-{
-    // Ensure SW3_SyscallList is populated.
-    if (!SW3_PopulateSyscallList()) return NULL;
-
-    DWORD index = ((DWORD)rand()) % SW3_SyscallList.Count;
-
-    while (FunctionHash == SW3_SyscallList.Entries[index].Hash) {
-        // Spoofing the syscall return address
-        index = ((DWORD)rand()) % SW3_SyscallList.Count;
-    }
-    return SW3_SyscallList.Entries[index].SyscallAddress;
-}
 
 void init2()
 {
@@ -579,7 +427,7 @@ void init2()
 }
 void init()
 {
-    SW3_PopulateSyscallList();//Init  ovo..
+    NoMore();//Init  ovo..
     HMODULE AppExecutionAlias = LoadLibraryW(L"ApiSetHost.AppExecutionAlias.dll");
     HMODULE daxexec = LoadLibraryW(L"daxexec.dll");
     HMODULE sechost = GetModuleHandleW(L"sechost.dll");

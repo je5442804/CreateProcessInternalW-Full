@@ -32,7 +32,7 @@
 
 #define BREAKAWAY_INHIBITED 0x20
 
-// 0x497C7
+//0x0497C7
 //0x4E87C7
 #define PROCESS_CREATE_FLAGS_BREAKAWAY 0x00000001 // NtCreateProcessEx & NtCreateUserProcess
 #define PROCESS_CREATE_FLAGS_NO_DEBUG_INHERIT 0x00000002 // NtCreateProcessEx & NtCreateUserProcess
@@ -45,10 +45,10 @@
 #define PROCESS_CREATE_FLAGS_INHERIT_FROM_PARENT 0x00000100 // NtCreateProcessEx & NtCreateUserProcess
 #define PROCESS_CREATE_FLAGS_SUSPENDED 0x00000200 // NtCreateProcessEx & NtCreateUserProcess
 #define PROCESS_CREATE_FLAGS_FORCE_BREAKAWAY 0x00000400 // NtCreateProcessEx & NtCreateUserProcess, requires SeTcb
-#define PROCESS_CREATE_FLAGS_MINIMAL_PROCESS 0x00000800 // NtCreateProcessEx only
+#define PROCESS_CREATE_FLAGS_MINIMAL_PROCESS 0x00000800 // NtCreateProcessEx only 
 #define PROCESS_CREATE_FLAGS_RELEASE_SECTION 0x00001000 // NtCreateProcessEx & NtCreateUserProcess, remove from NtCreateUserProcess since win 11 insider 26016?
 #define PROCESS_CREATE_FLAGS_CLONE_MINIMAL 0x00002000 // NtCreateProcessEx only
-#define PROCESS_CREATE_FLAGS_CLONE_MINIMAL_REDUCED_COMMIT 0x00004000 //
+#define PROCESS_CREATE_FLAGS_CLONE_MINIMAL_REDUCED_COMMIT 0x00004000 // removed
 #define PROCESS_CREATE_FLAGS_AUXILIARY_PROCESS 0x00008000 // NtCreateProcessEx & NtCreateUserProcess, requires SeTcb
 
 #define PROCESS_CREATE_FLAGS_PACKAGE_BREAKAWAY 0x00010000 // Mask only, Fake Flag, DO NOT use as real one in NtCreateUserProcess, Local Process is Package and call with Package Breakway ? No Inherit DllPath
@@ -63,7 +63,6 @@
 //
 // Define Attribute to opt out of matching All Application Packages
 //
-
 #define PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT                                 0x01
 
 #define DESKTOP_APP_BREAKAWAY_ENABLED(DesktopAppPolicy)  !(DesktopAppPolicy & (PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_OVERRIDE  | PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_DISABLE_PROCESS_TREE))
@@ -121,10 +120,9 @@
 #define UPDATE_VDM_PROCESS_HANDLE   1
 #define UPDATE_VDM_HOOKED_CTRLC     2
 
-// Activatable State // APPX_PACKEAGE_CREATEION_SUSPEND
+// Activatable State // APPX_PACKEAGE_CREATE_SUSPENDED
 // PsmRegisterApplicationProcess // Wait for Debugger
-#define APPX_PACKEAGE_CREATEION_SUSPEND 0x1
-
+#define APPX_PACKEAGE_CREATE_SUSPENDED 0x1
 
 #define DIRECTORY_QUERY 0x0001
 #define DIRECTORY_TRAVERSE 0x0002
@@ -258,7 +256,6 @@ typedef enum _PROC_THREAD_ATTRIBUTE_NUMEX {
 	ProcThreadAttributeTrustedApp = 29
 } PROC_THREAD_ATTRIBUTE_NUMEX;
 
-
 #ifndef PROC_THREAD_ATTRIBUTE_EXTENDED_FLAGS
 #define PROC_THREAD_ATTRIBUTE_EXTENDED_FLAGS \
     ProcThreadAttributeValue(ProcThreadAttributeExtendedFlags, FALSE, TRUE, TRUE)
@@ -367,7 +364,6 @@ typedef enum _RTL_PATH_TYPE {
 	RtlPathTypeRootLocalDevice//7
 }RTL_PATH_TYPE;
 
-
 /*
 typedef struct _RTL_BUFFER
 {
@@ -436,7 +432,6 @@ typedef struct _WNF_TYPE_ID
 {
 	GUID TypeId;
 } WNF_TYPE_ID, * PWNF_TYPE_ID;
-
 
 typedef enum _KCONTINUE_TYPE
 {
@@ -517,8 +512,6 @@ typedef struct _TOKEN_SECURITY_ATTRIBUTE_V1
 		PTOKEN_SECURITY_ATTRIBUTE_OCTET_STRING_VALUE pOctetString;
 	} Values;
 } TOKEN_SECURITY_ATTRIBUTE_V1, * PTOKEN_SECURITY_ATTRIBUTE_V1;
-
-
 
 typedef VOID(KNORMAL_ROUTINE) (
 	IN PVOID NormalContext,
@@ -939,7 +932,6 @@ typedef VOID(CALLBACK* PTIMER_APC_ROUTINE)(
 	IN PVOID TimerContext,
 	IN ULONG TimerLowValue,
 	IN LONG TimerHighValue);
-
 
 typedef struct _KEY_VALUE_PARTIAL_INFORMATION
 {
@@ -1434,6 +1426,7 @@ typedef struct _OBJECT_NAME_INFORMATION
 {
 	UNICODE_STRING Name;
 } OBJECT_NAME_INFORMATION, * POBJECT_NAME_INFORMATION;
+
 typedef struct _OBJECT_TYPE_INFORMATION
 {
 	UNICODE_STRING TypeName;
@@ -1465,7 +1458,6 @@ typedef struct _OBJECT_TYPES_INFORMATION
 {
 	ULONG NumberOfTypes;
 } OBJECT_TYPES_INFORMATION, * POBJECT_TYPES_INFORMATION;
-
 
 typedef enum _OBJECT_INFORMATION_CLASS
 {
@@ -1668,7 +1660,6 @@ typedef struct _PS_PROTECTION
 	};
 } PS_PROTECTION, * PPS_PROTECTION;
 
-
 typedef enum _PROCESSINFOCLASS
 {
 	ProcessBasicInformation, // q: PROCESS_BASIC_INFORMATION, PROCESS_EXTENDED_BASIC_INFORMATION
@@ -1785,8 +1776,6 @@ typedef enum _PROCESSINFOCLASS
 	ProcessEffectivePagePriority,
 	MaxProcessInfoClass
 } PROCESSINFOCLASS;
-
-
 
 #define DOS_MAX_COMPONENT_LENGTH 255
 #define DOS_MAX_PATH_LENGTH (DOS_MAX_COMPONENT_LENGTH + 5)
@@ -1926,6 +1915,13 @@ typedef struct _RTL_USER_PROCESS_PARAMETERS32
 	ULONG HeapMemoryTypeMask; // WIN11
 } RTL_USER_PROCESS_PARAMETERS32, * PRTL_USER_PROCESS_PARAMETERS32;
 
+//
+//https://github.com/diversenok/NtUtilsLibrary
+//
+//#define RTL_USER_PROC_VAILD_CREATE_CAPTURE_MASK 0xBFEF1EE
+// 0x8FEF1EE
+// 0xBFEF1EE
+
 #define RTL_USER_PROC_PARAMS_NORMALIZED 0x00000001
 #define RTL_USER_PROC_PROFILE_USER 0x00000002
 #define RTL_USER_PROC_PROFILE_KERNEL 0x00000004
@@ -1934,22 +1930,31 @@ typedef struct _RTL_USER_PROCESS_PARAMETERS32
 #define RTL_USER_PROC_RESERVE_16MB 0x00000040
 #define RTL_USER_PROC_CASE_SENSITIVE 0x00000080
 #define RTL_USER_PROC_DISABLE_HEAP_DECOMMIT 0x00000100
+
 #define RTL_USER_PROC_DLL_REDIRECTION_LOCAL 0x00001000
 #define RTL_USER_PROC_APP_MANIFEST_PRESENT 0x00002000
 #define RTL_USER_PROC_IMAGE_KEY_MISSING 0x00004000
-#define RTL_USER_PROC_USE_DOTLOCAL 0x00008000 // uncorrected
+#define RTL_USER_PROC_DEV_OVERRIDE_ENABLED 0x00008000//#define RTL_USER_PROC_USE_DOTLOCAL 0x00008000
 
-#define RTL_USER_PROC_OPTIN_PROCESS 0x00020000
+#define RTL_USER_PROC_OPTIN_PROCESS						0x00020000
+#define RTL_USER_PROC_SESSION_OWNER						0x00040000
+#define RTL_USER_PROC_HANDLE_USER_CALLBACK_EXCEPTIONS	0x00080000
 
+#define RTL_USER_PROC_PROTECTED_PROCESS					0x00400000
+
+// win 11 Insider newer!
+// 0x01000000
+#define RTL_USER_PROC_NO_IMAGE_EXPANSION_MITIGATION 0x02000000
+#define RTL_USER_PROC_APPX_LOADER_ALTERNATE_FORWARDER 0x04000000 //win 11 LdrpInitializePolicy AppModelPolicy_LoaderIncludeAlternateForwarders_True = 0x360001, // xxx unable set in nt!NtCreateUserProcess?
 //
-//https://github.com/diversenok/NtUtilsLibrary
-//
-
-#define RTL_USER_PROC_SESSION_OWNER 0x00040000
-#define RTL_USER_PROC_HANDLE_USER_CALLBACK_EXCEPTIONS 0x00080000
-#define RTL_USER_PROC_PROTECTED_PROCESS 0x00400000
 #define RTL_USER_PROC_APPX_GLOBAL_OVERRIDE 0x08000000 //uncorrected
+
+// xxx
+#define RTL_USER_PROC_LOADER_FORWARDER 0x20000000 // win 11 L"forwarder\\alt" when LoaderIncludeAlternateForwarders else L"forwarder"
+#define RTL_USER_PROC_EXIT_PROCESS_NORMAL 0x40000000 // LdrShutdownProcess uncorrected
 #define RTL_USER_PROC_SECURE_PROCESS 0x80000000
+
+
 
 // private
 #define PROTECTION_LEVEL_WINTCB_LIGHT 0x00000000
@@ -1999,7 +2004,6 @@ typedef struct _ISOLATION_MANIFEST_PROPERTIES {
 	UNICODE_STRING Description;
 	ULONG_PTR Level;
 } ISOLATION_MANIFEST_PROPERTIES, * PISOLATION_MANIFEST_PROPERTIES;
-
 
 typedef enum _PS_ATTRIBUTE_NUM
 {
@@ -2061,7 +2065,6 @@ typedef enum _PS_ATTRIBUTE_NUM
     ((Thread) ? PS_ATTRIBUTE_THREAD : 0) | \
     ((Input) ? PS_ATTRIBUTE_INPUT : 0) | \
     ((Additive) ? PS_ATTRIBUTE_ADDITIVE : 0))
-
 
 #define PS_ATTRIBUTE_PARENT_PROCESS \
     PsAttributeValue(PsAttributeParentProcess, FALSE, TRUE, TRUE)
@@ -2948,7 +2951,6 @@ typedef struct _PEB32
 	ULONGLONG ExtendedFeatureDisableMask; // since WIN11
 } PEB32, * PPEB32;
 
-
 typedef struct _TEB
 {
 	NT_TIB NtTib;
@@ -3129,7 +3131,6 @@ typedef struct _PROCESS_BASIC_INFORMATION
 	HANDLE InheritedFromUniqueProcessId;
 } PROCESS_BASIC_INFORMATION, * PPROCESS_BASIC_INFORMATION;
 
-
 typedef struct _THREAD_BASIC_INFORMATION
 {
 	NTSTATUS ExitStatus;
@@ -3139,6 +3140,7 @@ typedef struct _THREAD_BASIC_INFORMATION
 	KPRIORITY Priority;
 	KPRIORITY BasePriority;
 } THREAD_BASIC_INFORMATION, * PTHREAD_BASIC_INFORMATION;
+
 typedef enum _THREADINFOCLASS
 {
 	ThreadBasicInformation, // q: THREAD_BASIC_INFORMATION
@@ -3484,7 +3486,6 @@ typedef struct _PS_PKG_CLAIM {
 
 #define CONSOLE_READ_NOREMOVE   0x0001
 #define CONSOLE_READ_NOWAIT     0x0002
-
 #define CONSOLE_READ_VALID      (CONSOLE_READ_NOREMOVE | CONSOLE_READ_NOWAIT)
 
 #define CONSOLE_GRAPHICS_BUFFER  2
@@ -3849,7 +3850,7 @@ public:
 	PDESKTOP_APPX_ACTIVATION_INFO DesktopAppXActivationInfo = NULL;
 
 	ExtendedAppExecutionAliasInfo(LPCWSTR ImagePath = NULL, PVOID Unknow = NULL) {};
-	BOOLEAN Load(HANDLE TokenHandle) {}; //BOOLEAN Load(ExtendedAppExecutionAliasInfo ,HANDLE TokenHandle);
+	BOOLEAN Load(HANDLE TokenHandle); //BOOLEAN Load(ExtendedAppExecutionAliasInfo ,HANDLE TokenHandle);
 }; //184
 
 // Warning! Unstable Struct!
@@ -3981,7 +3982,6 @@ namespace AppModel
 //
 
 
-
 // BasepGetPackagedAppInfoForFile(DosPathName, CurrentTokenHandle,TRUE, &ExtendedPackagedAppContext);
 // 根据Windows 11 Insider 26016.1000 逆向，后部分结构偏移与 Windows 11 21H2 有细微差异 [ACTIVATION_TOKEN_INFO ActivationTokenInfo/HANDLE TokenHandle]
 // [PackagedCreateProcess::GetPackagedDataForFileInternal] StateRepository::Cache::Entity::Package_NoThrow
@@ -4083,7 +4083,6 @@ typedef struct _COBALT_MODULE_FLAGS//32
 }COBALT_MODULE_FLAGS, * PCOBALT_MODULE_FLAGS;
 */
 
-
 typedef WORD TAG;
 typedef DWORD TAGID;
 typedef DWORD TAGREF;
@@ -4163,7 +4162,6 @@ typedef struct _DB {
 #else
 	LPCTSTR        pszTempStringtable;
 #endif
-
 
 } DB, * PDB;
 
@@ -4350,7 +4348,6 @@ typedef enum {
 	FLAG_USER,
 	FLAG_KERNEL
 } FLAGTYPE;
-
 
 //FIX_FLAG
 typedef struct _APPCOAMPAT_FLAG_LUA

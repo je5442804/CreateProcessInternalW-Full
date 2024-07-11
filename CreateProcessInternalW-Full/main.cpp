@@ -1,17 +1,20 @@
 ﻿#include "ntapi.hpp"
 #include "otherapi.hpp"
-#include <strsafe.h>
 
 #define TEST2
 int wmain(int argc, wchar_t* argv[])
 {
 	PEB Peb = { 0 };
+	NTSTATUS Status = 0;
 	PROCESS_BASIC_INFORMATION BasicInfo = { 0 };
-	ACTIVATION_CONTEXT_DATA ActivationContextData = { 0 };
-	STARTUPINFOEXW StartupInfo = { sizeof(StartupInfo) };
+	STARTUPINFOEXW StartupInfo = { 0 };
 	PROCESS_INFORMATION ProcessInformation = { 0 };
+	SIZE_T AttributeListLength = 0;//sizeof(PROC_THREAD_ATTRIBUTE_LIST)
+	PROC_THREAD_BNOISOLATION_ATTRIBUTE BnoIsolation = { 0 };
+
 	RtlSecureZeroMemory(&ProcessInformation, sizeof(ProcessInformation));
-	LPWSTR cmd = (LPWSTR)HeapAlloc(GetProcessHeap(), 0, sizeof(WCHAR) * MAX_PATH);
+	LPWSTR cmd = (LPWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(WCHAR) * MAX_PATH);
+	WCHAR WideString[] = L"   🖥️🚬🗿🎱😢😭  |*~`!@#$%^& ℃どはばねでびぷ*|  \"'{[🤣👉🤡👈🗿]}'\";/1.1.1.1:1337 \"|<🚀>|\"   ";
 
 	if (argc != 2 && cmd)
 	{
@@ -21,45 +24,42 @@ int wmain(int argc, wchar_t* argv[])
 	{
 		cmd = argv[1];
 	}
-	
+
 	//
 	// wchar_t cmd[] = L"notepad";
 	// wchar_t cmd2[] = L"C:\\Users\\Administrator\\Downloads\\IPPLUS\\IPPLUS.EXE";
 	// process.cpp
 	//
-	       
-	WCHAR WideString[] = L"I-am-BNO-in-BaseNamedObjects";
-	SIZE_T attributeListLength = 0;//sizeof(PROC_THREAD_ATTRIBUTE_LIST)
-	PROC_THREAD_BNOISOLATION_ATTRIBUTE bnoIsolation = { 0 };
-	bnoIsolation.IsolationEnabled = TRUE;
-	RtlMoveMemory(&bnoIsolation.IsolationPrefix, WideString, sizeof(WideString) - sizeof(UNICODE_NULL));
 
-	InitializeProcThreadAttributeList(NULL, 2, 0, &attributeListLength);//
+	BnoIsolation.IsolationEnabled = TRUE;
+	RtlMoveMemory(&BnoIsolation.IsolationPrefix, WideString, sizeof(WCHAR) * (3 + lstrlenW(WideString)));
 
 	StartupInfo.StartupInfo.cb = sizeof(StartupInfo);
-	StartupInfo.lpAttributeList = static_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(HeapAlloc(GetProcessHeap(), 0, attributeListLength));
+	StartupInfo.lpAttributeList = static_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(HeapAlloc(GetProcessHeap(), 0, AttributeListLength));
 	if (!StartupInfo.lpAttributeList)
 		return -1;
-	if (!InitializeProcThreadAttributeList(StartupInfo.lpAttributeList, 2, 0, &attributeListLength))
+
+	InitializeProcThreadAttributeList(NULL, 2, 0, &AttributeListLength);
+	if (!InitializeProcThreadAttributeList(StartupInfo.lpAttributeList, 2, 0, &AttributeListLength))
 	{
 		wprintf(L"InitializeProcThreadAttributeList Fail: %ld\n", GetLastError());
 	}
 	
-	if (!UpdateProcThreadAttribute(StartupInfo.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_BNO_ISOLATION, &bnoIsolation, sizeof bnoIsolation, nullptr, nullptr))
+	if (!UpdateProcThreadAttribute(StartupInfo.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_BNO_ISOLATION, &BnoIsolation, sizeof(BnoIsolation), NULL, NULL))
 	{
 		wprintf(L"UpdateProcThreadAttribute Fail: %ld\n", GetLastError());
 	}
+
 	// PROCESS_CREATION_MITIGATION_POLICY_WIN32K_SYSTEM_CALL_DISABLE_ALWAYS_ON
-	// 
-	// PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_PREFER_SYSTEM32_ALWAYS_ON
 	// Forces image load preference to prioritize the Windows install System32
 	// folder before dll load dir, application dir and any user dirs set.
 	// - Affects IAT resolution standard search path only, NOT direct LoadLibrary or
 	//   executable search path.
-	DWORD64 policy = PROCESS_CREATION_MITIGATION_POLICY_STRICT_HANDLE_CHECKS_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_PREFER_SYSTEM32_ALWAYS_ON;
+
+	DWORD64 PolicyFlags = PROCESS_CREATION_MITIGATION_POLICY_STRICT_HANDLE_CHECKS_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_PREFER_SYSTEM32_ALWAYS_ON;
 		// | PROCESS_CREATION_MITIGATION_POLICY_BLOCK_NON_MICROSOFT_BINARIES_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_FONT_DISABLE_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_FORCE_RELOCATE_IMAGES_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_PROHIBIT_DYNAMIC_CODE_ALWAYS_ON;
 
-	UpdateProcThreadAttribute(StartupInfo.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, &policy, sizeof(policy), NULL, NULL);
+	UpdateProcThreadAttribute(StartupInfo.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, &PolicyFlags, sizeof(PolicyFlags), NULL, NULL);
 	
 #ifndef TEST
 
@@ -75,10 +75,9 @@ int wmain(int argc, wchar_t* argv[])
 		NULL,
 		(LPSTARTUPINFOW)&StartupInfo,
 		&ProcessInformation,
-		NULL
-	);
-	
+		NULL);
 #else
+
 	BOOL BoolStatus = CreateProcessW(
 		NULL,
 		cmd,
@@ -89,8 +88,7 @@ int wmain(int argc, wchar_t* argv[])
 		NULL,
 		NULL,
 		(LPSTARTUPINFOW)&StartupInfo,
-		&ProcessInformation
-	);
+		&ProcessInformation);
 #endif 
 	
 	wprintf(L"CreateProcessInternalW: %ls\n", BoolStatus ? L"Success" : L"Fail");
@@ -101,25 +99,27 @@ int wmain(int argc, wchar_t* argv[])
 	{
 		wprintf(L"hProcess: 0x%p, PID = %ld\n", ProcessInformation.hProcess, ProcessInformation.dwProcessId);
 		wprintf(L"hThread: 0x%p, TID = %ld\n", ProcessInformation.hThread, ProcessInformation.dwThreadId);
-
-		NTSTATUS Status = NtQueryInformationProcess(ProcessInformation.hProcess, ProcessBasicInformation, &BasicInfo, sizeof(PROCESS_BASIC_INFORMATION), NULL);
+		//GetProcessInformation(ProcessInformation.hProcess, ProcessBasicInformation,)
+		Status = NtQueryInformationProcess(ProcessInformation.hProcess, ProcessBasicInformation, &BasicInfo, sizeof(PROCESS_BASIC_INFORMATION), NULL);
 		if (!NT_SUCCESS(Status))
-		{
-			return 2;
-		}
+			return Status;
+
 		Status = NtReadVirtualMemory(ProcessInformation.hProcess, BasicInfo.PebBaseAddress, &Peb, sizeof(Peb), NULL);
 		if (!NT_SUCCESS(Status))
-		{
-			return 2;
-		}
+			return Status;
+
 		wprintf(L"Peb.SystemDefaultActivationContextData: 0x%p\n", Peb.SystemDefaultActivationContextData);
 		wprintf(L"Peb.ActivationContextData:              0x%p\n", Peb.ActivationContextData);
 		wprintf(L"=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
+
 		NtWaitForSingleObject(ProcessInformation.hProcess, FALSE, NULL);
+
 		Status = NtQueryInformationProcess(ProcessInformation.hProcess, ProcessBasicInformation, &BasicInfo, sizeof(PROCESS_BASIC_INFORMATION), NULL);
 		wprintf(L"Process %lld Exited: 0x%08lx\n", (ULONGLONG)BasicInfo.UniqueProcessId, BasicInfo.ExitStatus);
+
 		NtClose(ProcessInformation.hProcess);
 		NtClose(ProcessInformation.hThread);
 	}
+
 	return 0;
 }

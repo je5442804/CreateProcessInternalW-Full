@@ -1,7 +1,6 @@
 ﻿#include <stdio.h>
 #include "otherapi.hpp"
 
-
 void CreateInfoOutPut(PS_CREATE_INFO CreateInfo)
 {
 	/*
@@ -25,7 +24,7 @@ void CreateInfoOutPut(PS_CREATE_INFO CreateInfo)
 	//wprintf(L"CreateInfo.SpareBits2: 0x%08x\n", CreateInfo.SuccessState.u2.s2.SpareBits2);
 	//wprintf(L"CreateInfo.SpareBits3: 0x%08x\n", CreateInfo.SuccessState.u2.s2.SpareBits3);
 	wprintf(L"------------------------------------------------------------------\n");
-	wprintf(L"CreateInfo.FileHandle:0x%p\n", CreateInfo.SuccessState.FileHandle);
+	wprintf(L"CreateInfo.FileHandle: 0x%p\n", CreateInfo.SuccessState.FileHandle);
 	wprintf(L"CreateInfo.SectionHandle: 0x%p\n", CreateInfo.SuccessState.SectionHandle);
 	wprintf(L"CreateInfo.UserProcessParametersNative: 0x%p\n", (PVOID)CreateInfo.SuccessState.UserProcessParametersNative);
 
@@ -63,12 +62,12 @@ void BaseCreateProcessMessageOutPut(BASE_SXS_CREATEPROCESS_MSG BaseCreateProcess
 {
 
 	//wprintf(L"[*] BaseCreateProcessMessageSxs Pointer 0x%p\n", &BaseCreateProcessMessageSxs);
-	wprintf(L"[*] Flags: 0x%08lx\n", BaseCreateProcessMessageSxs.Flags);
-	wprintf(L"[*] ProcessParameterFlags.Flags: 0x%08lx\n", BaseCreateProcessMessageSxs.ProcessParameterFlags);
+	wprintf(L"[*] SxsFlags: 0x%08lx\n", BaseCreateProcessMessageSxs.Flags);
+	wprintf(L"[*] SxsProcessParameterFlags: 0x%08lx\n", BaseCreateProcessMessageSxs.ProcessParameterFlags);
 
 	if (BaseCreateProcessMessageSxs.AssemblyDirectory.Length)
 		wprintf(L"[*] AssemblyDirectory: %ls, Length: %d,  MaximumLength: %d\n", BaseCreateProcessMessageSxs.AssemblyDirectory.Buffer, BaseCreateProcessMessageSxs.AssemblyDirectory.Length, BaseCreateProcessMessageSxs.AssemblyDirectory.MaximumLength);
-	wprintf(L"[*] ActivationContextRunLevel.RunLevel: %d\n", BaseCreateProcessMessageSxs.ActivationContextRunLevel.RunLevel);
+	wprintf(L"[*] ActivationContextRunLevel: %d\n", BaseCreateProcessMessageSxs.ActivationContextRunLevel.RunLevel);
 	wprintf(L"[*] CultureFallBacks: \"");
 	for (USHORT i = 0; i < BaseCreateProcessMessageSxs.CultureFallBacks.Length / sizeof(WCHAR) - sizeof(UNICODE_NULL); i++) {
 		if (BaseCreateProcessMessageSxs.CultureFallBacks.Buffer[i] == L'\0')
