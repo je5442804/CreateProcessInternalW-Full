@@ -30,16 +30,16 @@ int wmain(int argc, wchar_t* argv[])
 	// wchar_t cmd2[] = L"C:\\Users\\Administrator\\Downloads\\IPPLUS\\IPPLUS.EXE";
 	// process.cpp
 	//
-
+	
 	BnoIsolation.IsolationEnabled = TRUE;
 	RtlMoveMemory(&BnoIsolation.IsolationPrefix, WideString, sizeof(WCHAR) * (3 + lstrlenW(WideString)));
-
+	InitializeProcThreadAttributeList(NULL, 2, 0, &AttributeListLength);
+	
 	StartupInfo.StartupInfo.cb = sizeof(StartupInfo);
 	StartupInfo.lpAttributeList = static_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(HeapAlloc(GetProcessHeap(), 0, AttributeListLength));
 	if (!StartupInfo.lpAttributeList)
 		return -1;
 
-	InitializeProcThreadAttributeList(NULL, 2, 0, &AttributeListLength);
 	if (!InitializeProcThreadAttributeList(StartupInfo.lpAttributeList, 2, 0, &AttributeListLength))
 	{
 		wprintf(L"InitializeProcThreadAttributeList Fail: %ld\n", GetLastError());
