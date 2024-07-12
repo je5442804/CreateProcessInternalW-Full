@@ -5,13 +5,12 @@ Base on [__NtCreateUserProcess-Post__](https://github.com/je5442804/NtCreateUser
 __Explore Attack Surface and the New Techniques relate to this as far as you can,__  
 __or it's useless for you.__  
 
-## Fixing...  
-  
 ## Tested on (x64 only)  
 Windows 11 24H2 x64 (26252.5000)  **Preview**  
 Windows 11 23H2 x64 (22631.3880)  
 Windows 11 21H2 x64 (22000.795/22000.1098/22000.2600)  
-Windows 10 22H2 x64 (19045.2130)  
+Windows Server 2022 x64 (20348.2582)  
+Windows 10 22H2 x64 (19045.4651)  
 Windows 10 21H2 x64 (19044.1826)  
 
 ## Example
@@ -21,7 +20,9 @@ __CreateProcessInternalW-Full.exe  (ImageName)__
 (3) CreateProcessInternalW-Full.exe "C:\Users\Administrator\AppData\Local\Microsoft\WindowsApps\MicrosoftEdge.exe"  (No more)   
 (4) CreateProcessInternalW-Full.exe "C:\Program Files (x86)\duowan\yy\YY.exe"  (v9.33.0.1 InvalidHandle 0xc0000008 with Strict Handle Checks)   
 (5) CreateProcessInternalW-Full.exe MediaPlayer   
-
+(6) CreateProcessInternalW-Full.exe "\\"C:\Program Files (x86)\cmcm\kdesk\kwallpaper.exe\\" /from:27" lolarg3  
+(set argc >= 3 to disable lpAttributeList)  
+  
 ## Build Environment  
 Visual Studio 2022  
 __Relase x64__  
