@@ -104,6 +104,10 @@ NTSTATUS  BasepConvertWin32AttributeList(
 		{
 			FsctlMitigationSupported = TRUE;
 		}
+		else if (NtdllBuildNumber <= 20348)							// [10.0.20348.8192]
+		{
+			FsctlMitigationSupported = FALSE;
+		}
 		else if (NtdllBuildNumber <= 22000 && NtdllRevision >= 2600)// [10.0.22000.2538] 当且仅当2023/11 开始出现 [10.0.22000.2600] 
 		{
 			FsctlMitigationSupported = TRUE;
@@ -1419,14 +1423,17 @@ PVOID BasepIsRealtimeAllowed(
 	ULONG Privilege = SE_INC_BASE_PRIORITY_PRIVILEGE;
 	PVOID State = 0;
 	NTSTATUS Status = 0;
+
 	Status = RtlAcquirePrivilege(&Privilege, 1, Impersonating ? RTL_ACQUIRE_PRIVILEGE_REVERT: 0, &State);
 	if (!NT_SUCCESS(Status)) {
 		return NULL;
 	}
+
 	if (!LeaveEnabled) {
 		RtlReleasePrivilege(State);
 		State = (PVOID)1;
 	}
+
 	return State;
 }
 

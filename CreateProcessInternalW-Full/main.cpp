@@ -14,9 +14,9 @@ int wmain(int argc, wchar_t* argv[])
 
 	RtlSecureZeroMemory(&ProcessInformation, sizeof(ProcessInformation));
 	LPWSTR cmd = (LPWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(WCHAR) * MAX_PATH);
-	WCHAR WideString[] = L"   🖥️🚬🗿🎱😢😭  |*~`!@#$%^& ℃どはばねでびぷ*|  \"'{[🤣👉🤡👈🗿]}'\";/1.1.1.1:1337 \"|<🚀>|\"   ";
+	WCHAR WideString[] = L"   🖥️☁🚬🚬🚬🗿888🎱🎱🎱😢😭😭😭 |*~`!@#$%^& ℃どはばねでびぷ*|  \"'{[🤣👉🤡👈🗿]}'\";/1.1.1.1:1337 \"|<🚀>|\"   ";
 
-	if (argc != 2 && cmd)
+	if (argc < 2 && cmd)
 	{
 		memcpy_s(cmd, 24, L"notepad.exe", 24);
 	}
@@ -24,18 +24,21 @@ int wmain(int argc, wchar_t* argv[])
 	{
 		cmd = argv[1];
 	}
-
+	else
+	{
+		return argc;
+	}
 	//
 	// wchar_t cmd[] = L"notepad";
 	// wchar_t cmd2[] = L"C:\\Users\\Administrator\\Downloads\\IPPLUS\\IPPLUS.EXE";
 	// process.cpp
 	//
-	
+
 	BnoIsolation.IsolationEnabled = TRUE;
 	RtlMoveMemory(&BnoIsolation.IsolationPrefix, WideString, sizeof(WCHAR) * (3 + lstrlenW(WideString)));
 	InitializeProcThreadAttributeList(NULL, 2, 0, &AttributeListLength);
-	
-	StartupInfo.StartupInfo.cb = sizeof(StartupInfo);
+
+	StartupInfo.StartupInfo.cb = argc >= 3 ? sizeof(STARTUPINFOW) : sizeof(STARTUPINFOEXW);
 	StartupInfo.lpAttributeList = static_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(HeapAlloc(GetProcessHeap(), 0, AttributeListLength));
 	if (!StartupInfo.lpAttributeList)
 		return -1;
@@ -56,8 +59,10 @@ int wmain(int argc, wchar_t* argv[])
 	// - Affects IAT resolution standard search path only, NOT direct LoadLibrary or
 	//   executable search path.
 
-	DWORD64 PolicyFlags = PROCESS_CREATION_MITIGATION_POLICY_STRICT_HANDLE_CHECKS_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_PREFER_SYSTEM32_ALWAYS_ON;
-		// | PROCESS_CREATION_MITIGATION_POLICY_BLOCK_NON_MICROSOFT_BINARIES_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_FONT_DISABLE_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_FORCE_RELOCATE_IMAGES_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_PROHIBIT_DYNAMIC_CODE_ALWAYS_ON;
+	DWORD64 PolicyFlags[2] = { 0 };
+	// | PROCESS_CREATION_MITIGATION_POLICY_BLOCK_NON_MICROSOFT_BINARIES_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_FONT_DISABLE_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_FORCE_RELOCATE_IMAGES_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_PROHIBIT_DYNAMIC_CODE_ALWAYS_ON;
+	PolicyFlags[0] = PROCESS_CREATION_MITIGATION_POLICY_FORCE_RELOCATE_IMAGES_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_STRICT_HANDLE_CHECKS_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_PREFER_SYSTEM32_ALWAYS_ON;
+	PolicyFlags[1] = PROCESS_CREATION_MITIGATION_POLICY2_MODULE_TAMPERING_PROTECTION_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY2_RESTRICT_INDIRECT_BRANCH_PREDICTION_ALWAYS_ON | PROCESS_CREATION_MITIGATION_POLICY2_SPECULATIVE_STORE_BYPASS_DISABLE_ALWAYS_ON;
 
 	UpdateProcThreadAttribute(StartupInfo.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, &PolicyFlags, sizeof(PolicyFlags), NULL, NULL);
 	
@@ -70,7 +75,7 @@ int wmain(int argc, wchar_t* argv[])
 		NULL,
 		NULL,
 		FALSE,
-		EXTENDED_STARTUPINFO_PRESENT,
+		argc >= 3 ? 0 :EXTENDED_STARTUPINFO_PRESENT,
 		NULL,
 		NULL,
 		(LPSTARTUPINFOW)&StartupInfo,
@@ -99,7 +104,6 @@ int wmain(int argc, wchar_t* argv[])
 	{
 		wprintf(L"hProcess: 0x%p, PID = %ld\n", ProcessInformation.hProcess, ProcessInformation.dwProcessId);
 		wprintf(L"hThread: 0x%p, TID = %ld\n", ProcessInformation.hThread, ProcessInformation.dwThreadId);
-		//GetProcessInformation(ProcessInformation.hProcess, ProcessBasicInformation,)
 		Status = NtQueryInformationProcess(ProcessInformation.hProcess, ProcessBasicInformation, &BasicInfo, sizeof(PROCESS_BASIC_INFORMATION), NULL);
 		if (!NT_SUCCESS(Status))
 			return Status;
@@ -111,7 +115,6 @@ int wmain(int argc, wchar_t* argv[])
 		wprintf(L"Peb.SystemDefaultActivationContextData: 0x%p\n", Peb.SystemDefaultActivationContextData);
 		wprintf(L"Peb.ActivationContextData:              0x%p\n", Peb.ActivationContextData);
 		wprintf(L"=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-
 		NtWaitForSingleObject(ProcessInformation.hProcess, FALSE, NULL);
 
 		Status = NtQueryInformationProcess(ProcessInformation.hProcess, ProcessBasicInformation, &BasicInfo, sizeof(PROCESS_BASIC_INFORMATION), NULL);
