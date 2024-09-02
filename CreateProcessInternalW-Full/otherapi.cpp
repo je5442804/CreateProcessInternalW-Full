@@ -211,8 +211,8 @@ PRTL_USER_PROCESS_PARAMETERS BasepCreateProcessParameters(
 	IN  PUNICODE_STRING ImageName,
 	IN  LPCWSTR CurrentDirectory,
 	IN  PWSTR CommandLine,
-	IN  LPCWSTR AppXDllDirectory,
-	IN  LPCWSTR AppXRedirectionDllName,
+	IN  LPCWSTR DllDirectories,
+	IN  LPCWSTR RedirectionDllName,
 	IN  BOOLEAN IsPackageProcess,
 	IN  PVOID Environment,
 	IN OUT LPSTARTUPINFOW StartInfo,
@@ -240,15 +240,15 @@ PRTL_USER_PROCESS_PARAMETERS BasepCreateProcessParameters(
 	if (!NT_SUCCESS(Status))
 		goto Fail;
 
-	Status = RtlInitUnicodeStringEx(&TemplateProcessParameters.RedirectionDllName, AppXRedirectionDllName);
+	Status = RtlInitUnicodeStringEx(&TemplateProcessParameters.RedirectionDllName, RedirectionDllName);
 	if (!NT_SUCCESS(Status))
 		goto Fail;
 
-	Status = RtlInitUnicodeStringEx(&TemplateProcessParameters.DllPath, AppXDllDirectory);
+	Status = RtlInitUnicodeStringEx(&TemplateProcessParameters.DllPath, DllDirectories);
 	if (!NT_SUCCESS(Status))
 		goto Fail;
 
-	if (!AppXDllDirectory && !IsPackageProcess && (ProcessFlags & PROCESS_CREATE_FLAGS_PACKAGE_BREAKAWAY) == 0)// NoDllPath
+	if (!DllDirectories && !IsPackageProcess && (ProcessFlags & PROCESS_CREATE_FLAGS_PACKAGE_BREAKAWAY) == 0)// NoDllPath
 	{
 		Status = LdrGetDllDirectory(&TemplateProcessParameters.DllPath);
 
@@ -1485,8 +1485,8 @@ NTSTATUS BasepFreeActivationTokenInfo(PACTIVATION_TOKEN_INFO lpActivationTokenIn
 	if (lpActivationTokenInfo->ActivationTokenHandle)
 		NtClose(lpActivationTokenInfo->ActivationTokenHandle);
 
-	if (lpActivationTokenInfo->PackageBnoIsolationPrefix)
-		RtlFreeHeap(RtlProcessHeap(), 0, lpActivationTokenInfo->PackageBnoIsolationPrefix);
+	if (lpActivationTokenInfo->BnoIsolationPrefix)
+		RtlFreeHeap(RtlProcessHeap(), 0, lpActivationTokenInfo->BnoIsolationPrefix);
 
 	*lpActivationTokenInfo = { 0 };
 	return 0;
@@ -1554,4 +1554,107 @@ NTSTATUS AppXCheckPplSupport(LPCWSTR szFilePath, BOOL* IsPplSupported)
 NTSTATUS BasepCheckPplSupport(LPCWSTR szFilePath, BOOL* IsPplSupported)
 {
 	return AppXCheckPplSupport(szFilePath, IsPplSupported);
+}
+
+static UNICODE_STRING szLoadCHPEBinaries = RTL_CONSTANT_STRING(L"LoadCHPEBinaries");
+static UNICODE_STRING szHotpatchRestrictions = RTL_CONSTANT_STRING(L"HotpatchRestrictions");
+static UNICODE_STRING szRegistryxtajit = RTL_CONSTANT_STRING(L"\\Registry\\Machine\\Software\\Microsoft\\Wow64\\x86\\xtajit");
+static UNICODE_STRING szRegistryMemoryManagement = RTL_CONSTANT_STRING(L"\\Registry\\Machine\\System\\CurrentControlSet\\Control\\Session Manager\\Memory Management");
+
+NTSTATUS QueryChpeGlobalOptions(PULONG pChpeGlobalOption)
+{
+	NTSTATUS Status = 0;
+	ULONG ReturnLength = 0;
+	HANDLE KeyHandle = NULL;
+	OBJECT_ATTRIBUTES ObjectAttributes = { 0 };
+	UCHAR KeyValueBuffer[sizeof(KEY_VALUE_PARTIAL_INFORMATION) + sizeof(DWORD)] = { 0 };
+
+	*pChpeGlobalOption = TRUE;
+
+	// wtf???
+	InitializeObjectAttributes(&ObjectAttributes, &szRegistryxtajit, OBJ_FORCE_ACCESS_CHECK | OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
+	Status = NtOpenKey(&KeyHandle, KEY_WOW64_64KEY | KEY_QUERY_VALUE, &ObjectAttributes);
+
+	if (NT_SUCCESS(Status))
+	{
+		Status = NtQueryValueKey(
+			KeyHandle,
+			&szLoadCHPEBinaries,
+			KeyValuePartialInformation,
+			KeyValueBuffer,
+			sizeof(KEY_VALUE_PARTIAL_INFORMATION) + sizeof(DWORD),
+			&ReturnLength);
+
+		if (NT_SUCCESS(Status))
+		{
+			if (((PKEY_VALUE_PARTIAL_INFORMATION)KeyValueBuffer)->Type == REG_DWORD)
+			{
+				Status = STATUS_SUCCESS;
+				*pChpeGlobalOption = *(PULONG) &((PKEY_VALUE_PARTIAL_INFORMATION)KeyValueBuffer)->Data;
+			}
+			else
+			{
+				Status = STATUS_UNSUCCESSFUL;
+			}
+		}
+	}
+
+	if (KeyHandle)
+		NtClose(KeyHandle);
+
+	return Status;
+}
+
+BOOLEAN ChpeHotpatchRestrictionEnabled()
+{
+	ULONG ReturnLength = 0;
+	HANDLE KeyHandle = NULL;
+	BOOLEAN HotpatchRestricted = FALSE;
+	OBJECT_ATTRIBUTES ObjectAttributes = { 0 };
+	UCHAR KeyValueBuffer[sizeof(KEY_VALUE_PARTIAL_INFORMATION) + sizeof(DWORD)] = { 0 };
+
+	InitializeObjectAttributes(&ObjectAttributes, &szRegistryMemoryManagement, OBJ_FORCE_ACCESS_CHECK | OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
+
+	if (NT_SUCCESS(NtOpenKey(&KeyHandle, KEY_WOW64_64KEY | KEY_QUERY_VALUE, &ObjectAttributes)) &&
+		NT_SUCCESS(NtQueryValueKey(
+			KeyHandle,
+			&szHotpatchRestrictions,
+			KeyValuePartialInformation,
+			KeyValueBuffer,
+			sizeof(KEY_VALUE_PARTIAL_INFORMATION) + sizeof(DWORD),
+			&ReturnLength))
+	)
+	{
+		if (((PKEY_VALUE_PARTIAL_INFORMATION)KeyValueBuffer)->Type == REG_DWORD)
+		{
+			HotpatchRestricted = *(PBOOLEAN) &((PKEY_VALUE_PARTIAL_INFORMATION)KeyValueBuffer)->Data;
+		}
+	}
+
+	if (KeyHandle)
+		NtClose(KeyHandle);
+
+	return HotpatchRestricted;
+}
+
+BOOLEAN QueryChpeConfiguration(PUNICODE_STRING szNtImageName, BOOLEAN ModuleChpeEnabled)
+{
+	BOOLEAN bWow64 = FALSE;
+	ULONG QueryData = 0;
+
+	//Feature_Servicing_HotpatchDisableChpe__private_IsEnabledDeviceUsage() &&
+	if (OSBuildNumber >= 26100 && ChpeHotpatchRestrictionEnabled())
+	{
+		return FALSE;
+	}
+
+	if (NT_SUCCESS(LdrQueryImageFileExecutionOptionsEx(szNtImageName, L"LoadCHPEBinaries", REG_DWORD, &QueryData, sizeof(DWORD), 0, bWow64)) || 
+		NT_SUCCESS(QueryChpeGlobalOptions(&QueryData)))
+	{
+		return (BOOLEAN)QueryData;
+	}
+	else
+	{
+		return ModuleChpeEnabled;
+	}
 }

@@ -4,6 +4,10 @@
 #include <iostream>
 #include <appmodel.h>
 
+#ifndef __THE_HEADER__
+#define __THE_HEADER__
+
+
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 #define IS_WIN32_HRESULT(x)	(((x) & 0xFFFF0000) == 0x80070000)
 #define WIN32_FROM_HRESULT(hr)		(0x0000FFFF & (hr))
@@ -298,11 +302,27 @@ typedef enum _PROC_THREAD_ATTRIBUTE_NUMEX {
 #define EXTENDED_PROCESS_CREATION_FLAG_FORCELUA 0x00000002
 #define EXTENDED_PROCESS_CREATION_FLAG_FORCE_BREAKAWAY 0x00000004 // requires SeTcbPrivilege // since WINBLUE
 
+//
 // LUA elevation support
+//
+
 #define ELEVATION_FLAG_TOKEN_CHECKS       0x00000001
 #define ELEVATION_FLAG_VIRTUALIZATION     0x00000002
 #define ELEVATION_FLAG_SHORTCUT_REDIR     0x00000004
 #define ELEVATION_FLAG_NO_SIGNATURE_CHECK 0x00000008
+
+typedef union _RTL_ELEVATION_FLAGS
+{
+	ULONG Flags;
+	struct
+	{
+		ULONG ElevationEnabled : 1;
+		ULONG VirtualizationEnabled : 1;
+		ULONG InstallerDetectEnabled : 1;
+		ULONG AdminApprovalModeType : 2;
+		ULONG ReservedBits : 27;
+	};
+} RTL_ELEVATION_FLAGS, * PRTL_ELEVATION_FLAGS;
 
 #ifndef _WIN64
 #define GDI_HANDLE_BUFFER_SIZE GDI_HANDLE_BUFFER_SIZE32
@@ -3556,6 +3576,10 @@ typedef struct _PseudoConsole
 #define PSEUDOCONSOLE_PASSTHROUGH_MODE (0x8)
 #endif
 
+#define  PS_MITIGATION_OPTION1_XTENDED_CONTROL_FLOW_GUARD_ALWAYS_ON			0x10000000000
+#define  PS_MITIGATION_OPTION1_XTENDED_CONTROL_FLOW_GUARD_ALWAYS_OFF		0x20000000000
+#define  PS_MITIGATION_OPTION1_XTENDED_CONTROL_FLOW_GUARD_MASK				0x30000000000
+
 #define  PS_MITIGATION_OPTION3_FSCTL_SYSTEM_CALL_DISABLE_ALWAYS_ON			0x10000000
 #define  PS_MITIGATION_OPTION3_FSCTL_SYSTEM_CALL_DISABLE_ALWAYS_OFF			0x20000000
 #define  PS_MITIGATION_OPTION3_FSCTL_SYSTEM_CALL_DISABLE_MASK				0x30000000
@@ -3794,9 +3818,9 @@ typedef enum _HARDERROR_RESPONSE
 
 typedef struct _APPX_PROCESS_CONTEXT
 {
-	PSECURITY_CAPABILITIES AppXSecurityCapabilities;//0 AppXContainerSecurityCapabilities
-	LPCWSTR AppXDllDirectory;//8
-	LPCWSTR AppXCurrentDirectory;//16 
+	PSECURITY_CAPABILITIES SecurityCapabilities;//0 AppXContainerSecurityCapabilities
+	LPCWSTR DllDirectories;//8
+	LPCWSTR CurrentDirectory;//16 
 	PCWSTR PackageFullName;//24
 	HANDLE EventHandle;//32
 	HANDLE DuplicatedProcessHandle;//40
@@ -3806,7 +3830,7 @@ typedef struct _APPX_PROCESS_CONTEXT
 	PVOID LocalBaseAddress;//64 
 	PVOID RemoteBaseAddress;//72
 	union {
-		ULONG AppXFlags; //80 BYTE?
+		ULONG ContextFlags; //80 BYTE?
 		struct
 		{
 			UCHAR AppXProtectedProcessLight : 1;
@@ -3817,7 +3841,7 @@ typedef struct _APPX_PROCESS_CONTEXT
 			USHORT Reserved : 16;
 		}s1;
 	}u1;
-	LPCWSTR AppXRedirectionDllName;//88
+	LPCWSTR RedirectionDllName;//88
 }APPX_PROCESS_CONTEXT, * PAPPX_PROCESS_CONTEXT;
 
 typedef struct _DESKTOP_APPX_ACTIVATION_INFO
@@ -3826,7 +3850,21 @@ typedef struct _DESKTOP_APPX_ACTIVATION_INFO
 	HANDLE Semaphore; //TrackingSemaphore
 }DESKTOP_APPX_ACTIVATION_INFO, * PDESKTOP_APPX_ACTIVATION_INFO;
 
-//APP_EXECUTION_ALIAS_INFO_EXTEND Uncorrected! Warning! Unstable Struct!
+
+class AppExecAliasData
+{
+
+};
+
+// uncorrected !!!
+enum AppExecutionAliasType
+{
+	// AppXDeploymentExtensions.onecore.dll!Common::FileExists -> File isn't a Directory -> AppExecutionAliasType = 1 ?????
+	// CurrentProcess has Protect Level ! -> AppExecutionAliasType = 1 ?????
+	DesktopApp = 0x0,
+	UniversalApp = 0x1
+};
+// Warning! Unstable Struct! 200 -> 224 -> 240
 // ERROR!
 class ExtendedAppExecutionAliasInfo
 {
@@ -3837,7 +3875,7 @@ public:
 	LPCWSTR AppAliasBaseImagePath = NULL;//8
 	HANDLE TokenHandle = NULL;//16
 	LPCWSTR PackageFamilyName = NULL;//24 
-	BOOL BreakawayModeLaunch = FALSE;//32
+	DWORD AppExecutionAliasType = 0;//32 GetAppExecutionAliasApplicationType AppType
 	PWSTR AppExecutionAliasRedirectPackages = NULL;	//40
 	PWSTR AliasPackagesIsolationPrefix = NULL;		//48
 
@@ -3852,7 +3890,6 @@ public:
 	ExtendedAppExecutionAliasInfo(LPCWSTR ImagePath = NULL, PVOID Unknow = NULL) {};
 	BOOLEAN Load(HANDLE TokenHandle); //BOOLEAN Load(ExtendedAppExecutionAliasInfo ,HANDLE TokenHandle);
 }; //184
-
 // Warning! Unstable Struct!
 class ExtendedAppExecutionAliasInfo_New
 {
@@ -3862,7 +3899,7 @@ public:
 	LPCWSTR AppAliasBaseImagePath = NULL;//8
 	HANDLE TokenHandle = NULL;//16
 	LPCWSTR PackageFamilyName = NULL;//24
-	BOOL BreakawayModeLaunch = FALSE;//32
+	DWORD AppExecutionAliasType = 0;//32 GetAppExecutionAliasApplicationType AppType
 	PWSTR AppExecutionAliasRedirectPackages = NULL;//40
 	std::wstring PresentRawImagePath;//48
 	std::wstring AppXPackageName2;//80
@@ -3897,51 +3934,93 @@ public:
 }; //184
 */
 
+//
+// WTF 这个随便找的枚举从哪来的忘了现在还TM找不到来源了啊啊啊，这枚举居然是对的吗？
+// 
+// [https://scorpiosoftware.net/2019/01/15/fun-with-appcontainers/] (Pavel Yosifovich)
+// 
+// Tim Mangan say:
+// (January 16, 2019 at 4:31 am)
+// Pavel,
+// Great work. MSIX, which is AppX based, runs differently in the container.
+// The Integrety is medium(and we can get high with UAC) and named kernel objects are not spoofed.
+// But we still have restrictions at the container boundary.
+// So while the low integrety is interesting, I don’t think it is the cause.
+// 
+// Pavel Yosifovich reply:
+// (January 16, 2019 at 10:25 am)
+// This runs in an AppSilo – same as dekstop apps converted into Appx using Desktop Bridge.
+// 
 // rev
+//
 enum AppType
 {
 	InvaildApp = 0,
-	GeneralUWPApp = 1,
-	MultipleInstancesUWPApp = 2,
-	ConsoleUWPApp = 3,
-	ContainerApp = 4,
-	Win32App = 5,
+	GeneralUWPApp = 1,			// [5] RuntimeBehaviorIsUniversal
+	MultipleInstancesUWPApp = 2,// [2] RuntimeBehaviorIsUniversal && SupportsMultipleInstances
+	ConsoleUWPApp = 3,			// [1] RuntimeBehaviorIsUniversal && IsConsoleSubsystem
+	ContainerApp = 4,			// [3] RuntimeBehaviorIsDesktopBridge || RuntimeBehaviorIsAppSilo [https://github.com/tyranid/Zer0Con_2018]
+	Win32App = 5,				// [4] RuntimeBehaviorIsWin32alacarte
 	MaxNumberApp
 };
 
+// namespace AppModelPolicy_GetPolicy_Internal
+// isn't used yet.
+enum AppModelPolicy_AppType
+{
+	AppModelPolicy_AppType_Universal = 0x0001,
+	AppModelPolicy_AppType_Centennial = 0x0002,
+	AppModelPolicy_AppType_Desktop = 0x0003,
+	AppModelPolicy_AppType_PackagedService = 0x0004,
+	AppModelPolicy_AppType_PerAppBroker = 0x0005,
+	AppModelPolicy_AppType_PartialTrustCentennial = 0x0006,
+	AppModelPolicy_AppType_FullTrustUniversal = 0x0007,
+	AppModelPolicy_AppType_Win32Alacarte = 0x0008,
+	AppModelPolicy_AppType_XboxGame = 0x0009,
+	AppModelPolicy_AppType_SuspendableCentennial = 0x000a,
+	AppModelPolicy_AppType_AppSilo = 0x000b,
+	AppModelPolicy_AppType_Count = 0x000b,
+};
 
 typedef struct _ACTIVATION_TOKEN_INFO
 {
 	HANDLE ActivationTokenHandle;
-	LPWSTR PackageBnoIsolationPrefix; //in RemoteProcess explorer.exe 
+	LPWSTR BnoIsolationPrefix; // PackageBnoIsolationPrefix in RemoteProcess
 }ACTIVATION_TOKEN_INFO, * PACTIVATION_TOKEN_INFO;
+
 
 // AppXDeploymentExtensions.onecore.dll 
 // Microsoft Windows AppXDeployment Server
 // AppModel::TrustLevel_AppSilo
+// Warning! UnCorrected!!!
 namespace AppModel
 {
-	enum
+	enum RuntimeBehavior
 	{
-		RuntimeBehavior_None,//?? RuntimeBehavior_None
 		RuntimeBehavior_Universal,// RuntimeBehavior_Universal? RuntimeBehavior_Windows_app
 		RuntimeBehavior_DesktopBridge, //RuntimeBehavior_PackagedClassicApp, https://learn.microsoft.com/en-us/windows/apps/get-started/intro-pack-dep-proc
-		RuntimeBehavior_Win32App,// including apps packaged with external location.[PackageExternalLocation, PackageExternal]
-		RuntimeBehavior_AppSilo // ?
+		RuntimeBehavior_Win32alacarte,// including apps packaged with external location.[PackageExternalLocation, PackageExternal]
+		RuntimeBehavior_AppSilo
 	};
 
-	enum
+	enum AppLifecycleBehavior
 	{
-		AppLifecycleBehavior_None,
-		AppLifecycleBehavior_Unmanaged,
-		AppLifecycleBehavior_SystemManaged,
+		Unmanaged,
+		SystemManaged 
 	};
-	enum
+
+	enum TrustLevel
 	{
-		TrustLevel_None,
 		TrustLevel_PartialTrust,
 		TrustLevel_FullTrust,
+		TrustLevel_AppSilo //?
 	};
+	enum BnoIsolation
+	{
+		BnoIsolation_None,
+		BnoIsolation_Package
+	};
+
 };
 
 // StateRepository::Entity::Activation Uncorrected
@@ -3967,7 +4046,6 @@ namespace AppModel
 #define APPMODEL_PACKAGE_IN_RELATED_SET 0x80
 #define APPMODEL_PACKAGE_MORERECENTLY_STAGED 0x400 //StateRepository::Migration::Deployment_Package_PopulateMostRecentlyStaged
 #define APPMODEL_PACKAGE_CONTENT_FULL_TRUST 0x800000 //PackageNeedsToSetFlag
-// AppXDeploymentServer.dll 无能为力
 
 //
 // uap10:RuntimeBehavior	:
@@ -3981,11 +4059,13 @@ namespace AppModel
 // You can think of them as being in two groups.One group is UWP apps("windowsApp"); the other is Windows.exes with main or WinMain("packagedClassicApp" or "win32App").That second group is also known as desktop apps.
 //
 
-
+//
 // BasepGetPackagedAppInfoForFile(DosPathName, CurrentTokenHandle,TRUE, &ExtendedPackagedAppContext);
 // 根据Windows 11 Insider 26016.1000 逆向，后部分结构偏移与 Windows 11 21H2 有细微差异 [ACTIVATION_TOKEN_INFO ActivationTokenInfo/HANDLE TokenHandle]
 // [PackagedCreateProcess::GetPackagedDataForFileInternal] StateRepository::Cache::Entity::Package_NoThrow
-
+// 
+// uncorrected !!!
+// 
 namespace ExtendedPackagedAppContext
 {
 	struct ExtendedPackagedAppContext
@@ -3999,7 +4079,7 @@ namespace ExtendedPackagedAppContext
 
 		LPWSTR PresentCurrentDirectory;//528
 		LPWSTR PresentAppCategory;//536 [ExtendedPackagedAppContext::SetCategory]
-		BOOLEAN IsAppExecutionAliasType;//544
+		BOOLEAN IsAppExecutionAliasCategory;//544
 
 		// SqlLite3: [StateRepository-Machine.srd, StateRepository-Deployment.srd]
 		// [Windows AppXSvc: C:\Windows\system32\svchost.exe -k wsappx -p] -> [StateRepository::Entity::Activation::]
@@ -4013,7 +4093,7 @@ namespace ExtendedPackagedAppContext
 		// Activation Type 
 		// [PackagedCreateProcess::GetAppType(StateRepository::Cache::Entity::Application_NoThrow* Application)] HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModel\StateRepository\Cache\Application\Data->Flags
 		// [PackagedCreateProcess::GetAppType(StateRepository::Cache::Entity::Activation_NoThrow* Activation)]   HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModel\StateRepository\Cache\Activation\Data->Flags
-		DWORD AppType;//548 0,1,2,3,4,5?  [PackagedCreateProcess::GetAppType] 
+		DWORD AppType;//548 [PackagedCreateProcess::GetAppType] 
 
 		ACTIVATION_TOKEN_INFO PresentActivationTokenInfo;//552
 		LPWSTR FinalPath;//568
@@ -4024,10 +4104,10 @@ namespace ExtendedPackagedAppContext
 
 		// Uncorrected! [PackagedCreateProcess::GetPackagedDataForFileInternal -> StateRepository::Cache::Entity::Package_NoThrow StateRepositoryCachePackage.m_flags]
 		// HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModel\StateRepository\Cache\Package\Data -> Flags
-		BOOLEAN Unknow1;//608 0x1
-		BOOLEAN Unknow2;//609 0x800
-		BOOLEAN Unknow3;//610 0x400000
-		BOOLEAN UnknowPadding;//611
+		BOOLEAN bIsDevelopmentMode;//608 0x1
+		BOOLEAN bIsMsixvc;//609 0x800
+		BOOLEAN bStageInPlace;//610 0x400000
+		BOOLEAN Reserve; ;//611
 		// ExtendedPackagedAppContext::SetAppLocation
 		// PackagedCreateProcess::IsTrustLabelAceSupported(AppPathType)
 		PackagePathType AppPathType;//612 DWORD PackageExternalLocationFlags2 [PackagedCreateProcess::IsTrustLabelAceSupported]
@@ -4035,384 +4115,7 @@ namespace ExtendedPackagedAppContext
 		ACTIVATION_TOKEN_INFO ActivationTokenInfo;//624
 		DESKTOP_APPX_ACTIVATION_INFO DesktopAppXActivationInfo;//640
 	};
-	
 };
-
-// OSVERSIONINFOEXW lpVersionInformation = { 0 };
-// WTF RB Tree? xxx nonono, but Merge COBALT_MODFLAG
-// DO NOT USE!
-/*
-typedef struct _COBALT_MODULE_FLAGS//32
-{
-	PVOID a;
-	union
-	{
-		ULONGLONG Flag1;//16
-		struct
-		{
-			ULONG Unknow;
-			ULONG Reserved;
-		};
-	};
-
-	union
-	{
-		ULONG Flag2;//16
-		struct
-		{
-			WORD unknow1;
-			char w;
-			char z;
-		}s1;
-	}u1;
-	char c;//20
-	char d;//21
-	char e;//22
-	char f;//23
-	union
-	{
-		ULONGLONG Flag3;//24
-		struct
-		{
-			char CoreFlagXor;//24 0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40
-			char CoreFlag2Xor2;//25  0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40
-			char XOR3;//26 win 11
-			char Reserved[6];
-		}s2;
-	}u2;
-}COBALT_MODULE_FLAGS, * PCOBALT_MODULE_FLAGS;
-*/
-
-typedef WORD TAG;
-typedef DWORD TAGID;
-typedef DWORD TAGREF;
-typedef PVOID HSDB;
-
-#define MAX_INDEXES             10
-//
-// This is a flag stored for each index.
-// Currently it is only used to flag "unique key" types.
-//
-#define SHIMDB_INDEX_UNIQUE_KEY 0x00000001
-
-// index could be of 2 types:
-// containing simply all record and containing only
-// "unique" keys with the records linked (the records have to be sorted for this
-// type of index to work)
-typedef struct _INDEX_INFO {
-	TAGID       tiIndex;            // points at the INDEX_BITS tag
-	TAG         tWhich;             // what tag is being indexed
-	TAG         tKey;               // what subtag is the key?
-	BOOL        bActive;            // are we actually indexing now?
-	BOOL        bUniqueKey;         // are the keys unique?
-	ULONGLONG   ullLastKey;
-	DWORD       dwIndexEntry;       // offset to the next available index entry
-	DWORD       dwIndexEnd;         // one byte past the end of the index block
-	DWORD       dwFlags;
-} INDEX_INFO, * PINDEX_INFO;
-
-//
-// Flags for use in DB structure DB.dwFlags
-//
-
-#define DB_IN_MEMORY           0x00000001
-#define DB_GUID_VALID          0x00000002
-// stringtable is a subdatabase that's created on the side
-// uncorrected!
-typedef struct _DB {
-	// used for both read and write
-
-	HANDLE      hFile;
-	PVOID       pBase;              // for  both memory-mapping & buffered writes
-	BOOL        bWrite;             // was it opened with create?
-	DWORD       dwSize;             // the size of the whole db, in bytes
-
-	DWORD       dwFlags;            // flags (such as IN-memory flag)
-
-	GUID        guidDB;             // optional id for the database
-
-	DWORD       dwIndexes;          // the number of indexes
-	INDEX_INFO  aIndexes[MAX_INDEXES];  // data for the indexes
-
-	// stuff that's used for read
-	HANDLE      hSection;           // for memory-mapping
-	TAGID       tiStringTable;      // pointer to the stringtable for string handling
-	BOOL        bIndexesScanned;    // have the indexes been looked at?
-
-	// stuff that's used for write
-	struct _DB* pdbStringTable;    // stringtable is a subdatabase that's created on the side
-	PVOID       pStringHash;        // stringtable hash (same info as in stringtable)
-	DWORD       dwAllocatedSize;    // the size allocated for buffered writes
-	BOOL        bWritingIndexes;    // are we in the process of allocating index space?
-	TAGID       tiIndexes;          // used during index allocation
-
-	//
-	// BUGBUG Hack alert read from unaligned (v1.0) database is enabled here
-	//
-	BOOL        bUnalignedRead;
-
-
-#ifdef WIN32A_MODE
-	PVOID       pHashStringBody;    // hash of the strings located within the body
-	PVOID       pHashStringTable;   // hash for the strings in the stringtable
-#endif
-
-#ifndef WIN32A_MODE
-	UNICODE_STRING ustrTempStringtable; // string table temp filename
-#else
-	LPCTSTR        pszTempStringtable;
-#endif
-
-} DB, * PDB;
-
-//
-// We're using the high 4 bits of the TAGID to
-// say what PDB the TAGID is from. Kludge? Perhaps.
-//
-#define PDB_MAIN            0x00000000
-#define PDB_TEST            0x10000000
-
-// all other entries are local (custom) pdbs
-
-#define PDB_LOCAL           0x20000000
-
-#define TAGREF_STRIP_TAGID  0x0FFFFFFF
-#define TAGREF_STRIP_PDB    0xF0000000
-
-typedef WCHAR* PWSZ;
-
-#define SDB_MAX_EXES 16
-#define SDB_MAX_LAYERS 8
-#define SDB_MAX_SDBS 16
-
-typedef struct tagSDBQUERYRESULT {
-	TAGREF trExes[SDB_MAX_EXES];	//0x00
-	DWORD  dwExeFlags[SDB_MAX_EXES];//0x40
-	TAGREF trLayers[SDB_MAX_LAYERS];//0x80
-	DWORD  dwLayerFlags;			//0xA0
-	TAGREF trApphelp;				//0xA4
-	DWORD  dwExeTagsCount;			//0xA8
-	DWORD  dwLayerTagsCount;		//0xAC
-	GUID   guidID;					//0xB0
-	DWORD  dwFlags;					//0xC0
-	DWORD  dwCustomSDBMap;			//0xC4
-	GUID   rgGuidDB[SDB_MAX_SDBS];	//0xC8
-} SDBQUERYRESULT, * PSDBQUERYRESULT;//0x1C8
-
-#define APPCOMPAT_EXE_DATA_MAGIC 0xAC0DEDAB
-#define SWITCHCONTEXT_BRANCH_GUID_MAXCOUNT 48
-
-// ShimLog ShimDebug
-#pragma pack(4)									// Require fixed aligment.
-//private
-typedef struct _ASL_LOG_ENTRY
-{
-	UCHAR  AslLogName[64];
-	PVOID AslLogData;//64
-	ULONG WrittenDataLength;//72
-	ULONG AlignLength;//76 HeapAllocAlignBoundary MaxLengthPreCopy?  2的倍数? 0x400, 0x1000
-	ULONG AppCompatLogFlags;//80 _ASL_LOG_LEVEL
-	ULONG Reserved;//84
-	ULONG EntryStateLock;//88
-}ASL_LOG_ENTRY, * PASL_LOG_ENTRY;//92
-#pragma pack()									// Restore previous aligment.
-
-// UnCorrected!
-typedef struct _ASL_LOG
-{
-	ASL_LOG_ENTRY* LogInfoEntryAddress;//链?
-	ASL_LOG_ENTRY  LogInfoEntry;//0x8
-	/* xxxxxx do not use, uncorrected
-	ULONG Padding;			//0x64
-	RTL_CRITICAL_SECTION Lock;//0x68
-
-	PVOID AslLogProcessHeap;//0x90
-	ULONG WrittenDataLength;//0x98
-
-	ULONGLONG DefaultAlignLength;//0xA8
-
-	PVOID DataOffset;//0xB0 Current
-	PVOID AslLogData;//0xB8
-	WCHAR LogFilePath[MAX_PATH];//0xC0 + 208
-
-	HANDLE EtwRegHandle;//0x2C8
-	*/
-	//阿巴阿巴....
-	//....
-}ASL_LOG, *PASL_LOG;
-
-//AppCompatData Fix fix
-typedef struct _APPCOMPAT_EXE_DATA {
-	WCHAR szShimEngine[MAX_PATH];				//+0x0 C:\Windows\System32\apphelp.dll
-	ULONG cbSize;								//+0x208
-	ULONG dwMagic;								//+0x20c 
-	ULONG dwFlags;								//+0x210
-	ULONG dwMachine;							//+0x214
-	SDBQUERYRESULT SdbQueryResult;				//+0x218
-
-	ASL_LOG_ENTRY AslLogEntry[11];				//+0x3e0  as it was on win 8 SepApplyDebugPolicy struct _ASL_LOG *g_ShimDebugLog/AslLogCreate/AslLogPublishToPeb
-	ULONG AslReserved1;							//+0x7d4
-	ULONGLONG AslReserved2;						//+0x7d8
-				
-	struct
-	{
-		ULONGLONG ContextReference;				//+0x7e0 SwitchContextReferenceCount//SwitchBackContextReferenceNumber -- SbUpdateSwitchContextBasedOnDll ? SbSupportedOsList
-		ULONG SwitchContextOSMatch;				//+0x7e8 BOOL? PlatformIdMatch Checked?
-		ULONG SdbTraceEnabled;					//+0x7ec BOOL?
-		HANDLE SdbTraceHandle;					//+0x7f0 EtwEvent
-		//
-		// Windows Internals, Part 1: Chapter 3->Processes and jobs->SwitchBack (p171-p173)
-		//=====================================================
-		// SwitchBack parses this information and correlates it with embedded information in SwitchBackcompatible DLLs (in the .sb_data image section) to 
-		// decide which version of an affected API should be called by the module.Because SwitchBack works at the loaded - module level, 
-		// it enables a process to have both legacy and current DLLs concurrently calling the same API, yet observing different results.
-		// 
-		// SWITCHBRANCH_CACHED_MODULE_TABLE->SWITCHBRANCH_MODULE_TABLE_ENTRY
-		// 
-		// SbPrepareSwitchContext csrstub.exe->IgnoreSwitchContext ?
-		// Windows PlatformId SwitchContext for Fine-Grained PlatformOverride AppCompat Branch Function/API
-		// ->trExes & trLayers
-		// 
-		// kernel32.dll!SbPrepareSwitchContext
-		// kernel32.dll!SbpCreateSwitchContext
-		// kernel32.dll!SbpMergeApphackContexts
-		// kernel32.dll!SbpQueryContexts
-		//  apphelp.dll!SdbQueryContext
-		// SdbQueryResult->trExes and SdbQueryResult->trLayers
-		// 48*16 = 768 0x300
-		//
-		struct
-		{
-			ULONGLONG ProcessOsMaxVersionTested;//+0x7f8 SupportOS->MaxVersionTested/SupportOSVersionTest/ProcessOsMaxVersionTested[SbGetProcessOsMaxVersionTested]
-			DWORD DeviceFamily;					//+0x800
-			DWORD Reserved;						//+0x804
-			PACKAGE_VERSION	MinPackageVersion;	//+0x808 IsPackageImage-> 6.2.0.0
-			GUID MaxSupportOSGuid;				//+0x810 for PlatformId 48 [trExesGenericPlatformGuid] ?
-			GUID MinSupportOSGuid;				//+0x820 0x820 - 0x7e0 = 0x40 = 64 [trLayersGenericPlatformGuid]
-			ULONG dwOSVersionCheckFormType;		//+0x830 d.. with SubSystemVersion[1]/MaxversionTested/OperatingSystemVersion/4?/SdbContextQuery +64
-			DWORD BranchGuidTotalCount;			//+0x834
-			GUID BranchGuidList[SWITCHCONTEXT_BRANCH_GUID_MAXCOUNT];//0x838
-		}SwitchBackContext;// Size = 0x340 should be SwitchBranch
-	};
-
-	ULONG dwParentProcessId;					//+0xb38
-	WCHAR szParentImageName[MAX_PATH];			//+0xb3c
-	WCHAR CompatLayerEnvValue[0x100];			//+0xd44 __COMPAT_LAYER 	WCHAR CompatLayerEnvValue[0x200] ???
-	// LayerName ? CommandLayerName??
-	WCHAR Reserved[0x100];						//+0xf44 maybe, UnCorrected! __COMMAND_LINE_OVERRIDE__// __PROCESS_HISTORY?
-	ULONG ImageFileSize;						//+0x1144 
-	ULONG ImageCheckSum;						//+0x1148
-	BOOL AppCompatSupportOSMatchExpect;			//+0x114c
-	BOOL ImageIsPackage;						//+0x1150
-	BOOL SxsSupportedOSVersionSpecified;		//+0x1154
-	BOOL RunLevelSpecified;						//+0x1158
-	BOOL OtherCompatModeEnabled;				//+0x115c
-	ACTCTX_REQUESTED_RUN_LEVEL RunLevel;		//+0x1160
-	ULONG Reserved2;							//+0x1164 [uncorrected] UiAccess?
-
-	ULARGE_INTEGER ManagerFinalAppCompatFlag;	//+0x1168
-	PVOID HookComInterface;						//+0x1170 ntdll!SE_COM_AddServer
-	HANDLE ComponentOnDemandEtwEvent;			//+0x1178 ntdll!LdrpCheckComponentOnDemandEtwEvent, related to QuirkComponent CodeId?
-	PVOID QuirksTable;							//+0x1180 指向一个结构 ApphelpCacheServiceMapQuirks//QuirkManager
-	ULONG QuirkTableSize;						//+0x1188 QuirkManagerFlags ?
-	ULONG Reserved3;							//+0x118c QuirkUnknowReserved
-
-	UCHAR CobaltProcFlagStruct[40];				//+0x1190 40 = 0x28  ->0x11B8 DO NOT TRY TO RE THIS.QAQ _COBALT_PROCFLAG
-
-	ULONG PdbBufferLength;						//+0x11b8
-	ULONG dwStructSize;							//+0x11bc PdbBufferOffset
-} APPCOMPAT_EXE_DATA, * PAPPCOMPAT_EXE_DATA;	//+0x11c0 == 4544
-// PdbBuffer next to  _APPCOMPAT_EXE_DATA
-
-//
-// SE_InitializeEngine->SeEngineCreate Create: 
-// ManagerPointerList in Heap: g_Engine
-// [0] FlagManager		0x30
-// [1] QuirkManager		0x30
-// [2] ShimManager		0x60
-// [3] HookManager		0x8A0
-// [4] ?
-// [5] ModuleTracker	0x48
-// [6] Router			0x18
-// [7] ComRouter		0xC0
-//
-
-typedef enum {
-	FIX_SHIM,
-	FIX_PATCH,
-	FIX_LAYER,
-	FIX_FLAG
-} FIXTYPE;
-
-typedef enum {
-	FLAG_USER,
-	FLAG_KERNEL
-} FLAGTYPE;
-
-//FIX_FLAG
-typedef struct _APPCOAMPAT_FLAG_LUA
-{
-	struct
-	{
-		UCHAR RunAsInvoker : 1;				// 应用程序应使用与父进程相同的 Windows 权限和用户权限运行。此设置相当于没有应用程序的应用程序兼容性数据库。应用程序以与启动它的父进程相同的权限启动，这减少了应用程序的安全风险。这是因为对于大多数应用程序来说，父级是 Explorer.exe，它作为标准用户应用程序运行。从以完全管理员身份运行的 cmd.exe shell 启动的 RunAsInvoker 应用程序将使用完全管理员访问令牌“以调用者身份运行”。
-		UCHAR RunAsHighest : 1;				// 该应用程序可由管理员和标准用户运行，并根据用户的特权和用户权限调整其行为;该应用程序需要比标准用户更高的特权和用户权限，但不要求用户是本地管理员组的成员。
-		UCHAR RunAsAdmin : 1;				// 应用程序应仅为管理员运行，必须使用完整的管理员访问令牌启动，并且无法在标准用户上下文中正确运行。此请求的执行级别标记是为要求用户是本地管理员组成员的 Windows Vista 之前的应用程序保留的。	
-		UCHAR Reserved1 : 5;
-		UCHAR Reserved2 : 8;
-	} DisableUiAccess;
-	struct
-	{
-		UCHAR RunAsInvoker : 1;				// 应用程序应使用与父进程相同的 Windows 权限和用户权限运行。此设置相当于没有应用程序的应用程序兼容性数据库。应用程序以与启动它的父进程相同的权限启动，这减少了应用程序的安全风险。这是因为对于大多数应用程序来说，父级是 Explorer.exe，它作为标准用户应用程序运行。从以完全管理员身份运行的 cmd.exe shell 启动的 RunAsInvoker 应用程序将使用完全管理员访问令牌“以调用者身份运行”。
-		UCHAR RunAsHighest : 1;				// 该应用程序可由管理员和标准用户运行，并根据用户的特权和用户权限调整其行为;该应用程序需要比标准用户更高的特权和用户权限，但不要求用户是本地管理员组的成员。
-		UCHAR RunAsAdmin : 1;				// 应用程序应仅为管理员运行，必须使用完整的管理员访问令牌启动，并且无法在标准用户上下文中正确运行。此请求的执行级别标记是为要求用户是本地管理员组成员的 Windows Vista 之前的应用程序保留的。	
-		UCHAR Reserved1 : 5;
-		UCHAR Reserved2 : 8;
-	} EnableUiAccess;
-
-	UCHAR NoVirtualization : 1;				// 关闭该应用程序的文件虚拟化和注册表虚拟化
-	UCHAR NoSignatureCheck : 1;				// 关闭应用程序的签名检查
-	UCHAR AdditiveRunAsHighest : 1;			// 当应用程序在没有人请求更高特权提升时接收RunAsHighest标志。这意味着，如果清单/AppCompatLayer是asInvoker/RunAsInvoker，将设置覆盖为RunAsHighest，但如果清单/AppCompatLayer是requireAdministrator/RunAsAdmin，没有任何影响。该标志将仅用于提高您的提升级别（到highestAvailable），而绝不会用于降低提升级别（从requireAdministrator）。
-	UCHAR NoCfgCheck : 1;					// 0x800000000
-	UCHAR NoImageExpansion : 1;				// 0x1000000000
-	UCHAR Reserved3 : 3;
-	UCHAR Reserved4 : 8;
-	USHORT Reserved5 : 16;
-}APPCOAMPAT_FLAG_LUA, * PAPPCOAMPAT_FLAG_LUA;
-
-typedef struct _APPCOAMPAT_FLAG_INSTALL
-{
-	UCHAR GenericInstaller : 1;				// 与通用安装程序匹配。
-	UCHAR SpecificInstaller : 1;			// 将应用程序标记为显示为旧版应用程序安装程序。标记文件后，SpecificInstaller 兼容性修复程序可以应用安装缓解措施，其中包括以管理员身份运行应用程序和应用 WRPMitigation 兼容性修复程序
-	UCHAR SpecificNonInstaller : 1;			// 将应用程序标记为不是应用程序安装文件（如果 GenericInstaller 函数找到并怀疑该应用程序是安装程序）。应用此兼容性修复程序后，应用程序将不再提示提升权限，或执行其他与安装相关的操作。
-	UCHAR Reserved1 : 5;
-	UCHAR Reserved2 : 8;
-	USHORT Reserved3;
-	ULONG Reserved4;
-}APPCOAMPAT_FLAG_INSTALL, * PAPPCOAMPAT_FLAG_INSTALL;
-
-// #define ..*..FLAG or typedef struct .. union .. will be better?
-// UnCorrected
-
-typedef struct _COAMPAT_FIX_FLAG
-{
-	union
-	{
-		ULARGE_INTEGER FixFlag;
-		//FLAG_MASK_KERNEL = 0x5005, [28]
-		//FLAG_MASK_USER = 0x5008, [62]
-		// 
-		// ? typedef struct ... NTVDM_FLAGS, *PNTVDM_FLAGS ?
-		// 
-        //FLAGS_NTVDM1 = 0x5009,? [130]
-        //FLAGS_NTVDM2 = 0x500A,? [18]
-        //FLAGS_NTVDM3 = 0x500B,? [26]
-		//FLAG_MASK_SHELL [Deprecated]??
-		//FLAG_MASK_FUSION only 0x1
-		//FLAG_PROCESSPARAM [2] EnableDEP: 0x20000:17 LoadLibraryRedirectFlag: 0x200000:21
-		APPCOAMPAT_FLAG_LUA LuaFlags; //FLAG_LUA [6]
-		APPCOAMPAT_FLAG_INSTALL InstallFlags; //FLAG_INSTALL [3]
-	};
-}COAMPAT_FIX_FLAG, * PCOAMPAT_FIX_FLAG;
 
 // Private, winbasep.h
 // ProcessParameters->WindowFlags = StartInfo->dwFlags;
@@ -4430,147 +4133,5 @@ typedef struct _COAMPAT_FIX_FLAG
 
 // TODO?
 // NTKernel PDCRevocation
-
-// PINIFILE_MAPPING_VARNAME->MappingFlags
-#define INIFILE_MAPPING_WRITE_TO_INIFILE_TOO    0x00000001
-#define INIFILE_MAPPING_INIT_FROM_INIFILE       0x00000002
-#define INIFILE_MAPPING_READ_FROM_REGISTRY_ONLY 0x00000004
-#define INIFILE_MAPPING_APPEND_BASE_NAME        0x10000000
-#define INIFILE_MAPPING_APPEND_APPLICATION_NAME 0x20000000
-#define INIFILE_MAPPING_SOFTWARE_RELATIVE       0x40000000
-#define INIFILE_MAPPING_USER_RELATIVE           0x80000000
-
-typedef struct _INIFILE_MAPPING_TARGET {
-	struct _INIFILE_MAPPING_TARGET* Next;
-	UNICODE_STRING RegistryPath;
-} INIFILE_MAPPING_TARGET, * PINIFILE_MAPPING_TARGET;
-
-typedef struct _INIFILE_MAPPING_VARNAME {
-	struct _INIFILE_MAPPING_VARNAME* Next;
-	UNICODE_STRING Name;
-	ULONG MappingFlags;
-	PINIFILE_MAPPING_TARGET MappingTarget;
-} INIFILE_MAPPING_VARNAME, * PINIFILE_MAPPING_VARNAME;
-
-typedef struct _INIFILE_MAPPING_APPNAME {
-	struct _INIFILE_MAPPING_APPNAME* Next;
-	UNICODE_STRING Name;
-	PINIFILE_MAPPING_VARNAME VariableNames;
-	PINIFILE_MAPPING_VARNAME DefaultVarNameMapping;
-} INIFILE_MAPPING_APPNAME, * PINIFILE_MAPPING_APPNAME;
-typedef CONST INIFILE_MAPPING_APPNAME* PCINIFILE_MAPPING_APPNAME;
-
-typedef struct _INIFILE_MAPPING_FILENAME {
-	struct _INIFILE_MAPPING_FILENAME* Next;
-	UNICODE_STRING Name;
-	PINIFILE_MAPPING_APPNAME ApplicationNames;
-	PINIFILE_MAPPING_APPNAME DefaultAppNameMapping;
-} INIFILE_MAPPING_FILENAME, * PINIFILE_MAPPING_FILENAME;
-typedef CONST INIFILE_MAPPING_FILENAME* PCINIFILE_MAPPING_FILENAME;
-
-typedef struct _INIFILE_MAPPING {
-	PINIFILE_MAPPING_FILENAME FileNames;
-	PINIFILE_MAPPING_FILENAME DefaultFileNameMapping;
-	PINIFILE_MAPPING_FILENAME WinIniFileMapping;
-	ULONG Reserved;
-} INIFILE_MAPPING, * PINIFILE_MAPPING;
-typedef CONST INIFILE_MAPPING* PCINIFILE_MAPPING;
-
-
-// HKLM\SYSTEM\CurrentControlSet\Control\CommonGlobUserSettings\Control Panel\International
-#define NLS_INVALID_INFO_CHAR  0xffff       /* marks cache string as invalid */
-
-#define MAX_REG_VAL_SIZE       80           /* max size of registry value */
-
-#define NLS_CACHE_MUTANT_NAME  L"NlsCacheMutant"  /* Name of NLS mutant cache */
-
-// 
-// Nls 结构大幅修改
-// "s" 前一位常常为字符数
-// basesrv.dll!NlsUpdateCacheInfo -> NtQueryMultipleValueKey: ValueBuffer 严格四字节Buffer分离
-//
-typedef struct _NLS_USER_INFO {
-	WCHAR	LocaleName[86];						//0x00 sLocale
-	WCHAR	sList[5];							//0xAC
-	WCHAR	sDecimal[5];						//0xB6
-	WCHAR	sThousand[5];						//0xC0
-	WCHAR	sGrouping[11];						//0xCA
-	WCHAR	sNativeDigits[12];					//0xE0
-	WCHAR	sMonDecimalSep[5];					//0xF8
-	WCHAR	sMonThousandSep[5];					//0x102
-	WCHAR	sMonGrouping[11];					//0x10C
-	WCHAR	sPositiveSign[6];					//0x122
-	WCHAR	sNegativeSign[6];					//0x12E
-	WCHAR	sTimeFormat[MAX_REG_VAL_SIZE + 1];	//0x13A
-	WCHAR	sShortTime[MAX_REG_VAL_SIZE + 1];	//0x1DC
-	WCHAR	s1159[16];							//0x27E
-	WCHAR	s2359[16];							//0x29E
-	WCHAR	sShortDate[MAX_REG_VAL_SIZE + 1];	//0x2BE
-	WCHAR	sYearMonth[MAX_REG_VAL_SIZE + 1];	//0x360
-	WCHAR	sLongDate[MAX_REG_VAL_SIZE + 1];	//0x402
-
-	WCHAR	iCountry;							//0x4A4
-	WCHAR	iMeasure;							//0x4A6
-	WCHAR	iPaperSize;							//0x4A8
-	WCHAR	iDigits;							//0x4AA
-	WCHAR	iLZero;								//0x4AC
-	WCHAR	iNegNumber;							//0x4AE
-	WCHAR	NumShape;							//0x4B0
-	WCHAR	iCurrDigits;						//0x4B2
-	WCHAR	iCurrency;							//0x4B4
-	WCHAR	iNegCurr;							//0x4B6
-	WCHAR	iFirstDayOfWeek;					//0x4B8
-	WCHAR	iFirstWeekOfYear;					//0x4BA [30]
-
-	WCHAR	sCurrency[14];						//0x4BC
-	WCHAR	iCalendarType;						//0x4D8
-	// ExplicitSettings
-	WCHAR	Currencies[5];						//0x4DA
-	WCHAR	ShortDate[MAX_REG_VAL_SIZE + 1];	//0x4E4
-	WCHAR	LongDate[MAX_REG_VAL_SIZE + 1];		//0x586
-
-	BOOL	fCacheValid;						//0x628 ULONG NlsCacheUpdated
-	LUID	InteractiveUserLuid;				//0x62C TokenStatistics.AuthenticationId
-	SE_SID	InteractiveUserSid;					//0x634 SECURITY_MAX_SID_SIZE 68 = 0x44
-	ULONG	ulCacheUpdateCount;					//0x678 basesrv.dll!BaseSrvNlsGetUserInfo
-} NLS_USER_INFO, * PNLS_USER_INFO;				//0x67C = 1660
-
-// win 10 20H1++ basesrv.dll!ServerDllInitialization
-// Credit: https://gist.github.com/Auscitte/ed807fd604d7b907ebd949628c6df725 [Auscitte]
-typedef struct _BASE_STATIC_SERVER_DATA
-{
-	UNICODE_STRING WindowsDirectory;							//0x0
-	UNICODE_STRING WindowsSystemDirectory;						//0x10
-	UNICODE_STRING NamedObjectDirectory;						//0x20
-	USHORT WindowsMajorVersion;									//0x30
-	USHORT WindowsMinorVersion;									//0x32
-	USHORT BuildNumber;											//0x34
-	USHORT CSDNumber;											//0x36
-	USHORT RCNumber;											//0x38
-	WCHAR CSDVersion[128];										//0x3A
-	//SYSTEM_BASIC_INFORMATION SysInfo;							
-	SYSTEM_TIMEOFDAY_INFORMATION TimeOfDay;						//0x140 (0x13A)
-	PINIFILE_MAPPING IniFileMapping;							//0x170
-	NLS_USER_INFO NlsUserInfo;									//0x178 kernelbase.dll!BaseNlsDllInitialize basesrv.dll!BaseSrvNlsGetUserInfo
-	BOOLEAN DefaultSeparateVDM;									//0x7F4 kernelbase.dll!CreateProcessInternalW 
-	BOOLEAN IsWowTaskReady;										//0x7F5
-	UNICODE_STRING WindowsSys32x86Directory;					//0x7F8
-	BOOLEAN fTermsrvAppInstallMode;								//0x808								
-	DYNAMIC_TIME_ZONE_INFORMATION tziTermsrvClientTimeZone;		//0x80C CsrBroadcastSystemMessageExW? tziDynamicTermsrvClientTimeZone TIME_ZONE_INFORMATION
-	KSYSTEM_TIME ktTermsrvClientBias;							//0x9BC
-	ULONG TermsrvClientTimeZoneId;								//0x9C8 kernelbase.dll!GetDynamicTimeZoneInformationCacheForYear
-	BOOLEAN LUIDDeviceMapsEnabled;								//0x9CC kernelbase.dll!QueryDosDeviceW/DefineDosDeviceW->LUIDDeviceMapsEnabled
-	ULONG TermsrvClientTimeZoneChangeNum;						//0x9D0 kernelbase.dll!GetClientTimeZoneInformation
-	UNICODE_STRING AppContainerNamedObjectsDirectory;			//0x9D8 kernelbase.dll!BasepGetNamedObjectDirectoryForToken
-	struct _BASE_STATIC_SERVER_DATA* RemoteBaseAddress;			//0x9E8 ++
-	UNICODE_STRING PrivateNameObjectsDirectory;					//0x9F0 kernelbase.dll!BasepGetNamedObjectDirectoryForToken PrivateNamespace
-} BASE_STATIC_SERVER_DATA, * PBASE_STATIC_SERVER_DATA;			//0xA00
-
-#define BASE_SHARED_SERVER_DATA ((PBASE_STATIC_SERVER_DATA)( \
-		(ULONGLONG)NtCurrentPeb()->ReadOnlySharedMemoryBase \
-		+ (ULONGLONG)NtCurrentPeb()->ReadOnlyStaticServerData[BASESRV_SERVERDLL_INDEX] \
-		- NtCurrentPeb()->CsrServerReadOnlySharedMemoryBase \
-		))
-
-#define MAX_SESSION_PATH  256
-#define SESSION_ROOT L"\\Sessions"
+// apptype, chpe 完工??
+#endif // !__THE_HEADER__

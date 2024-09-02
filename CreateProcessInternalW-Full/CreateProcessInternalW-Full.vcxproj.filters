@@ -47,5 +47,11 @@
     <ClInclude Include="csrss.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="apphelp.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="StateRepository.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

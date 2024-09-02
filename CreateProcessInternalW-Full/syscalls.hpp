@@ -80,6 +80,7 @@ extern	BasepReleaseSxsCreateProcessUtilityStruct_ BasepReleaseSxsCreateProcessUt
 extern	BasepCheckWebBladeHashes_ BasepCheckWebBladeHashes;
 extern	BasepIsProcessAllowed_ BasepIsProcessAllowed;
 extern	BaseUpdateVDMEntry_ BaseUpdateVDMEntry;
+extern  BasepQueryModuleChpeSettings_ BasepQueryModuleChpeSettings;
 extern	BasepProcessInvalidImage_ BasepProcessInvalidImage;
 extern	RaiseInvalid16BitExeError_ RaiseInvalid16BitExeError;
 extern	BaseIsDosApplication_ BaseIsDosApplication;

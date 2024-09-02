@@ -73,6 +73,7 @@ BasepReleaseSxsCreateProcessUtilityStruct_ BasepReleaseSxsCreateProcessUtilitySt
 BasepCheckWebBladeHashes_ BasepCheckWebBladeHashes;
 BasepIsProcessAllowed_ BasepIsProcessAllowed;
 BaseUpdateVDMEntry_ BaseUpdateVDMEntry;
+BasepQueryModuleChpeSettings_ BasepQueryModuleChpeSettings;
 BasepProcessInvalidImage_ BasepProcessInvalidImage;
 RaiseInvalid16BitExeError_ RaiseInvalid16BitExeError;
 BaseIsDosApplication_ BaseIsDosApplication;
@@ -467,6 +468,7 @@ void init()
     BasepCheckWebBladeHashes = (BasepCheckWebBladeHashes_)GetProcAddress(Kernel32, "BasepCheckWebBladeHashes");
     BasepIsProcessAllowed = (BasepIsProcessAllowed_)GetProcAddress(Kernel32, "BasepIsProcessAllowed");
     BaseUpdateVDMEntry = (BaseUpdateVDMEntry_)GetProcAddress(Kernel32, "BaseUpdateVDMEntry");
+    BasepQueryModuleChpeSettings = (BasepQueryModuleChpeSettings_)GetProcAddress(Kernel32, "BasepQueryModuleChpeSettings");
     BasepProcessInvalidImage = (BasepProcessInvalidImage_)GetProcAddress(Kernel32, "BasepProcessInvalidImage");
     RaiseInvalid16BitExeError = (RaiseInvalid16BitExeError_)GetProcAddress(Kernel32, "RaiseInvalid16BitExeError");
     BaseIsDosApplication = (BaseIsDosApplication_)GetProcAddress(Kernel32, "BaseIsDosApplication");

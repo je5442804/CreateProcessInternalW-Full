@@ -151,6 +151,7 @@
       </ImageHasSafeExceptionHandlers>
       <LargeAddressAware>true</LargeAddressAware>
       <TerminalServerAware>true</TerminalServerAware>
+      <SetChecksum>true</SetChecksum>
     </Link>
     <Manifest>
       <VerboseOutput>false</VerboseOutput>
@@ -170,9 +171,11 @@
     <ClCompile Include="syscalls.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="apphelp.hpp" />
     <ClInclude Include="csrss.hpp" />
     <ClInclude Include="ntapi.hpp" />
     <ClInclude Include="otherapi.hpp" />
+    <ClInclude Include="StateRepository.hpp" />
     <ClInclude Include="structs.hpp" />
     <ClInclude Include="syscalls.hpp" />
   </ItemGroup>

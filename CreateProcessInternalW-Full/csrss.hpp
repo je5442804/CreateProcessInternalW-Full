@@ -358,6 +358,149 @@ typedef struct _BASE_SRV_SXS_SYSTEM_DEFAULT_ACTIVATION_CONTEXT {
 } BASE_SRV_SXS_SYSTEM_DEFAULT_ACTIVATION_CONTEXT, * PBASE_SRV_SXS_SYSTEM_DEFAULT_ACTIVATION_CONTEXT;
 
 
+// PINIFILE_MAPPING_VARNAME->MappingFlags
+#define INIFILE_MAPPING_WRITE_TO_INIFILE_TOO    0x00000001
+#define INIFILE_MAPPING_INIT_FROM_INIFILE       0x00000002
+#define INIFILE_MAPPING_READ_FROM_REGISTRY_ONLY 0x00000004
+#define INIFILE_MAPPING_APPEND_BASE_NAME        0x10000000
+#define INIFILE_MAPPING_APPEND_APPLICATION_NAME 0x20000000
+#define INIFILE_MAPPING_SOFTWARE_RELATIVE       0x40000000
+#define INIFILE_MAPPING_USER_RELATIVE           0x80000000
+
+typedef struct _INIFILE_MAPPING_TARGET {
+    struct _INIFILE_MAPPING_TARGET* Next;
+    UNICODE_STRING RegistryPath;
+} INIFILE_MAPPING_TARGET, * PINIFILE_MAPPING_TARGET;
+
+typedef struct _INIFILE_MAPPING_VARNAME {
+    struct _INIFILE_MAPPING_VARNAME* Next;
+    UNICODE_STRING Name;
+    ULONG MappingFlags;
+    PINIFILE_MAPPING_TARGET MappingTarget;
+} INIFILE_MAPPING_VARNAME, * PINIFILE_MAPPING_VARNAME;
+
+typedef struct _INIFILE_MAPPING_APPNAME {
+    struct _INIFILE_MAPPING_APPNAME* Next;
+    UNICODE_STRING Name;
+    PINIFILE_MAPPING_VARNAME VariableNames;
+    PINIFILE_MAPPING_VARNAME DefaultVarNameMapping;
+} INIFILE_MAPPING_APPNAME, * PINIFILE_MAPPING_APPNAME;
+typedef CONST INIFILE_MAPPING_APPNAME* PCINIFILE_MAPPING_APPNAME;
+
+typedef struct _INIFILE_MAPPING_FILENAME {
+    struct _INIFILE_MAPPING_FILENAME* Next;
+    UNICODE_STRING Name;
+    PINIFILE_MAPPING_APPNAME ApplicationNames;
+    PINIFILE_MAPPING_APPNAME DefaultAppNameMapping;
+} INIFILE_MAPPING_FILENAME, * PINIFILE_MAPPING_FILENAME;
+typedef CONST INIFILE_MAPPING_FILENAME* PCINIFILE_MAPPING_FILENAME;
+
+typedef struct _INIFILE_MAPPING {
+    PINIFILE_MAPPING_FILENAME FileNames;
+    PINIFILE_MAPPING_FILENAME DefaultFileNameMapping;
+    PINIFILE_MAPPING_FILENAME WinIniFileMapping;
+    ULONG Reserved;
+} INIFILE_MAPPING, * PINIFILE_MAPPING;
+typedef CONST INIFILE_MAPPING* PCINIFILE_MAPPING;
+
+
+// HKLM\SYSTEM\CurrentControlSet\Control\CommonGlobUserSettings\Control Panel\International
+#define NLS_INVALID_INFO_CHAR  0xffff       /* marks cache string as invalid */
+
+#define MAX_REG_VAL_SIZE       80           /* max size of registry value */
+
+#define NLS_CACHE_MUTANT_NAME  L"NlsCacheMutant"  /* Name of NLS mutant cache */
+
+// 
+// Nls 结构大幅修改
+// "s" 前一位常常为字符数
+// basesrv.dll!NlsUpdateCacheInfo -> NtQueryMultipleValueKey: ValueBuffer 严格四字节Buffer分离
+//
+typedef struct _NLS_USER_INFO {
+    WCHAR	LocaleName[86];						//0x00 sLocale
+    WCHAR	sList[5];							//0xAC
+    WCHAR	sDecimal[5];						//0xB6
+    WCHAR	sThousand[5];						//0xC0
+    WCHAR	sGrouping[11];						//0xCA
+    WCHAR	sNativeDigits[12];					//0xE0
+    WCHAR	sMonDecimalSep[5];					//0xF8
+    WCHAR	sMonThousandSep[5];					//0x102
+    WCHAR	sMonGrouping[11];					//0x10C
+    WCHAR	sPositiveSign[6];					//0x122
+    WCHAR	sNegativeSign[6];					//0x12E
+    WCHAR	sTimeFormat[MAX_REG_VAL_SIZE + 1];	//0x13A
+    WCHAR	sShortTime[MAX_REG_VAL_SIZE + 1];	//0x1DC
+    WCHAR	s1159[16];							//0x27E
+    WCHAR	s2359[16];							//0x29E
+    WCHAR	sShortDate[MAX_REG_VAL_SIZE + 1];	//0x2BE
+    WCHAR	sYearMonth[MAX_REG_VAL_SIZE + 1];	//0x360
+    WCHAR	sLongDate[MAX_REG_VAL_SIZE + 1];	//0x402
+
+    WCHAR	iCountry;							//0x4A4
+    WCHAR	iMeasure;							//0x4A6
+    WCHAR	iPaperSize;							//0x4A8
+    WCHAR	iDigits;							//0x4AA
+    WCHAR	iLZero;								//0x4AC
+    WCHAR	iNegNumber;							//0x4AE
+    WCHAR	NumShape;							//0x4B0
+    WCHAR	iCurrDigits;						//0x4B2
+    WCHAR	iCurrency;							//0x4B4
+    WCHAR	iNegCurr;							//0x4B6
+    WCHAR	iFirstDayOfWeek;					//0x4B8
+    WCHAR	iFirstWeekOfYear;					//0x4BA [30]
+
+    WCHAR	sCurrency[14];						//0x4BC
+    WCHAR	iCalendarType;						//0x4D8
+    // ExplicitSettings
+    WCHAR	Currencies[5];						//0x4DA
+    WCHAR	ShortDate[MAX_REG_VAL_SIZE + 1];	//0x4E4
+    WCHAR	LongDate[MAX_REG_VAL_SIZE + 1];		//0x586
+
+    BOOL	fCacheValid;						//0x628 ULONG NlsCacheUpdated
+    LUID	InteractiveUserLuid;				//0x62C TokenStatistics.AuthenticationId
+    SE_SID	InteractiveUserSid;					//0x634 SECURITY_MAX_SID_SIZE 68 = 0x44
+    ULONG	ulCacheUpdateCount;					//0x678 basesrv.dll!BaseSrvNlsGetUserInfo
+} NLS_USER_INFO, * PNLS_USER_INFO;				//0x67C = 1660
+
+// win 10 20H1++ basesrv.dll!ServerDllInitialization
+// Credit: https://gist.github.com/Auscitte/ed807fd604d7b907ebd949628c6df725 [Auscitte]
+typedef struct _BASE_STATIC_SERVER_DATA
+{
+    UNICODE_STRING WindowsDirectory;							//0x0
+    UNICODE_STRING WindowsSystemDirectory;						//0x10
+    UNICODE_STRING NamedObjectDirectory;						//0x20
+    USHORT WindowsMajorVersion;									//0x30
+    USHORT WindowsMinorVersion;									//0x32
+    USHORT BuildNumber;											//0x34
+    USHORT CSDNumber;											//0x36
+    USHORT RCNumber;											//0x38
+    WCHAR CSDVersion[128];										//0x3A
+    //SYSTEM_BASIC_INFORMATION SysInfo;							
+    SYSTEM_TIMEOFDAY_INFORMATION TimeOfDay;						//0x140 (0x13A)
+    PINIFILE_MAPPING IniFileMapping;							//0x170
+    NLS_USER_INFO NlsUserInfo;									//0x178 kernelbase.dll!BaseNlsDllInitialize basesrv.dll!BaseSrvNlsGetUserInfo
+    BOOLEAN DefaultSeparateVDM;									//0x7F4 kernelbase.dll!CreateProcessInternalW 
+    BOOLEAN IsWowTaskReady;										//0x7F5 basesrv.dll!ServerDllInitialization kernel32.dll!GetNextVDMCommand
+    UNICODE_STRING WindowsSys32x86Directory;					//0x7F8
+    BOOLEAN fTermsrvAppInstallMode;								//0x808								
+    DYNAMIC_TIME_ZONE_INFORMATION tziTermsrvClientTimeZone;		//0x80C CsrBroadcastSystemMessageExW? tziDynamicTermsrvClientTimeZone TIME_ZONE_INFORMATION
+    KSYSTEM_TIME ktTermsrvClientBias;							//0x9BC
+    ULONG TermsrvClientTimeZoneId;								//0x9C8 kernelbase.dll!GetDynamicTimeZoneInformationCacheForYear
+    BOOLEAN LUIDDeviceMapsEnabled;								//0x9CC kernelbase.dll!QueryDosDeviceW/DefineDosDeviceW->LUIDDeviceMapsEnabled
+    ULONG TermsrvClientTimeZoneChangeNum;						//0x9D0 kernelbase.dll!GetClientTimeZoneInformation
+    UNICODE_STRING AppContainerNamedObjectsDirectory;			//0x9D8 kernelbase.dll!BasepGetNamedObjectDirectoryForToken
+    struct _BASE_STATIC_SERVER_DATA* RemoteBaseAddress;			//0x9E8 ++
+    UNICODE_STRING PrivateNameObjectsDirectory;					//0x9F0 kernelbase.dll!BasepGetNamedObjectDirectoryForToken PrivateNamespace
+} BASE_STATIC_SERVER_DATA, * PBASE_STATIC_SERVER_DATA;			//0xA00
+
+#define BASE_SHARED_SERVER_DATA ((PBASE_STATIC_SERVER_DATA)( \
+		(ULONGLONG)NtCurrentPeb()->ReadOnlySharedMemoryBase \
+		+ (ULONGLONG)NtCurrentPeb()->ReadOnlyStaticServerData[BASESRV_SERVERDLL_INDEX] \
+		- NtCurrentPeb()->CsrServerReadOnlySharedMemoryBase \
+		))
+
+#define MAX_SESSION_PATH  256
+#define SESSION_ROOT L"\\Sessions"
 
 //18
 typedef NTSTATUS(WINAPI* BasepConstructSxsCreateProcessMessage_)( 
@@ -372,7 +515,7 @@ typedef NTSTATUS(WINAPI* BasepConstructSxsCreateProcessMessage_)(
     IN PVOID AppCompatSxsData,
     IN ULONG AppCompatSxsDataSize,
     IN BOOL NoActivationContext, // (SectionImageInfomation.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_NO_ISOLATION) != 0 
-    IN LPCWSTR AppXCurrentDirectory, 
+    IN LPCWSTR CurrentDirectory, 
     IN PPEB PebAddress,//(PPEB) PVOID ULONGLONG
     IN PVOID ManifestAddress,
     IN ULONG ManifestSize,

@@ -2,6 +2,7 @@
 #include <ntstatus.h>
 #include "structs.hpp"
 #include "csrss.hpp"
+#include "apphelp.hpp"
 
 //#define DEBUG_PRINT
 
@@ -151,8 +152,8 @@ PRTL_USER_PROCESS_PARAMETERS BasepCreateProcessParameters(
 	IN  PUNICODE_STRING ImageName,
 	IN  LPCWSTR CurrentDirectory,
 	IN  PWSTR CommandLine,
-	IN  LPCWSTR AppXDllDirectory,
-	IN  LPCWSTR AppXRedirectionDllName,
+	IN  LPCWSTR DllDirectories,
+	IN  LPCWSTR RedirectionDllName,
 	IN  BOOLEAN IsPackageProcess,
 	IN  PVOID Environment,
 	IN OUT LPSTARTUPINFOW StartInfo,
@@ -293,6 +294,19 @@ RtlReleasePrivilege(
 	_In_ PVOID StatePointer
 );
 
+EXTERN_C NTSYSAPI
+NTSTATUS
+NTAPI
+LdrQueryImageFileExecutionOptionsEx(
+	_In_ PUNICODE_STRING SubKey,
+	_In_ PCWSTR ValueName,
+	_In_ ULONG Type,
+	_Out_ PVOID Buffer,
+	_In_ ULONG BufferSize,
+	_Out_opt_ PULONG ReturnedLength,
+	_In_ BOOLEAN Wow64
+);
+
 typedef BOOL(WINAPI* BuildSubSysCommandLine_)(
 	ULONG  Type,
 	LPCWSTR NewCommandLine,
@@ -371,14 +385,14 @@ NTSTATUS BasepUpdateProcessParametersField(
 
 typedef NTSTATUS(WINAPI* BaseCheckElevation_)(
 	IN HANDLE ProcessHandle,
-	IN HANDLE FileHandle,
-	IN LPCWSTR Win32ImagePath,
+	IN HANDLE ImageFileHandle,
+	IN LPCWSTR ImageFileName,
 	IN OUT DWORD* BaseElevationFlags,
 	IN COAMPAT_FIX_FLAG dwLuaRunlevelFlags,  //AppCompatFixFlags ULONGLONG
 	IN OUT PACTIVATION_CONTEXT_RUN_LEVEL_INFORMATION ActivationContextRunLevel,
 	IN PUNICODE_STRING AssemblyName,
 	IN DWORD dwInstallerFlags,
-	IN HANDLE TokenHandle,
+	IN HANDLE hChildToken,
 	OUT DWORD* pdwRunLevel,
 	OUT DWORD* pdwElevateReason
 	);
@@ -495,6 +509,19 @@ typedef BOOLEAN(WINAPI* ApiSetCheckFunction)(void);
 typedef PULONG(WINAPI* KernelBaseGetGlobalData_)(void);
 typedef VOID(WINAPI* RaiseInvalid16BitExeError_)(PUNICODE_STRING NtImageName);
 
+typedef ULONG(WINAPI* BasepQueryModuleChpeSettings_)(
+	PSDB_CSTRUCT_COBALT_MODFLAG ChpeModSettingsOut,
+	DWORD ulChpeModSettingsSize,
+	PWSTR szImagePath,
+	PUNICODE_STRING lpModuleName,
+	PVOID lpEnvironment,
+	PUNICODE_STRING lpPackageName,
+	PSDBQUERYRESULT* pSdbQueryResult,
+	PULONG SdbQueryResultSize,
+	PVOID AppCompatSxsData,
+	PULONG AppCompatSxsDataSize,
+	PCOAMPAT_FIX_FLAG CompatFixFlags
+	);
 typedef BOOL(WINAPI* BasepProcessInvalidImage_)(
 	NTSTATUS Error,
 	HANDLE TokenHandle,
@@ -540,24 +567,23 @@ typedef NTSTATUS(WINAPI* BasepPostSuccessAppXExtension_)(HANDLE ProcessHandle, P
 typedef NTSTATUS(WINAPI* CompletePackagedProcessCreationEx_)(
 	HANDLE ProcessHandle,
 	HANDLE ThreadHandle,
-	BOOL IsConsoleUWPApp,
-	BOOL IsMultipleInstancesUWPApp,
+	BOOL bConsoleUWPApp,
+	BOOL bMultipleInstancesUWPApp,
 	LPCWSTR lpCurrentDirectory,
 	LPCWSTR lpCommandLine,
-	BOOL IsAppExecutionAliasType,
+	BOOL IsAppExecutionAliasCategory,
 	HANDLE TokenHandle,
-	PULONG AppResumeRequired
+	PULONG lpActivationFlag
 	);
-
 
 typedef NTSTATUS(WINAPI* CompleteAppExecutionAliasProcessCreationEx_)(
 	HANDLE ProcessHandle,
 	HANDLE ThreadHandle,
-	BOOL UWPLaunchMode,
+	DWORD AppType,
 	LPCWSTR lpCurrentDirectory,
 	LPCWSTR lpCommandLine,
 	HANDLE TokenHandle,
-	PULONG AppResumeRequired
+	PULONG lpActivationFlag
 	);
 
 typedef NTSTATUS(WINAPI* BasepFinishPackageActivationForSxS_)(
@@ -566,7 +592,7 @@ typedef NTSTATUS(WINAPI* BasepFinishPackageActivationForSxS_)(
 	LPCWSTR lpCurrentDirectory,
 	LPCWSTR lpCommandLine,
 	HANDLE TokenHandle,
-	PULONG AppResumeRequired
+	PULONG lpActivationFlag
 	);
 
 typedef VOID(WINAPI* PerformAppxLicenseRundownEx_)(
@@ -580,3 +606,4 @@ typedef BOOL(WINAPI* BaseDestroyVDMEnvironment_)(IN PANSI_STRING AnsiEnv, IN PUN
 
 NTSTATUS BasepFreeActivationTokenInfo(PACTIVATION_TOKEN_INFO lpActivationTokenInfo);
 NTSTATUS BasepCheckPplSupport(LPCWSTR szFilePath, BOOL* IsPplSupported);
+BOOLEAN QueryChpeConfiguration(PUNICODE_STRING szNtImageName, BOOLEAN ModuleChpeEnabled);

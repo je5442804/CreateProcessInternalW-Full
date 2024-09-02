@@ -11,7 +11,7 @@ int wmain(int argc, wchar_t* argv[])
 	PROCESS_INFORMATION ProcessInformation = { 0 };
 	SIZE_T AttributeListLength = 0;//sizeof(PROC_THREAD_ATTRIBUTE_LIST)
 	PROC_THREAD_BNOISOLATION_ATTRIBUTE BnoIsolation = { 0 };
-
+	BOOL IgnoreAttributeList = (argc >= 3);
 	RtlSecureZeroMemory(&ProcessInformation, sizeof(ProcessInformation));
 	LPWSTR cmd = (LPWSTR)RtlAllocateHeap(RtlProcessHeap(), 0, sizeof(WCHAR) * MAX_PATH);
 	WCHAR WideString[] = L"   🖥️☁🚬🚬🚬🗿888🎱🎱🎱😢😭😭😭 |*~`!@#$%^& ℃どはばねでびぷ*|  \"'{[🤣👉🤡👈🗿]}'\";/1.1.1.1:1337 \"|<🚀>|\"   ";
@@ -38,7 +38,7 @@ int wmain(int argc, wchar_t* argv[])
 	RtlMoveMemory(&BnoIsolation.IsolationPrefix, WideString, sizeof(WCHAR) * (3 + lstrlenW(WideString)));
 	InitializeProcThreadAttributeList(NULL, 2, 0, &AttributeListLength);
 
-	StartupInfo.StartupInfo.cb = argc >= 3 ? sizeof(STARTUPINFOW) : sizeof(STARTUPINFOEXW);
+	StartupInfo.StartupInfo.cb = IgnoreAttributeList ? sizeof(STARTUPINFOW) : sizeof(STARTUPINFOEXW);
 	StartupInfo.lpAttributeList = static_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(HeapAlloc(GetProcessHeap(), 0, AttributeListLength));
 	if (!StartupInfo.lpAttributeList)
 		return -1;
@@ -75,12 +75,13 @@ int wmain(int argc, wchar_t* argv[])
 		NULL,
 		NULL,
 		FALSE,
-		argc >= 3 ? 0 :EXTENDED_STARTUPINFO_PRESENT,
+		IgnoreAttributeList ? 0 :EXTENDED_STARTUPINFO_PRESENT,
 		NULL,
 		NULL,
 		(LPSTARTUPINFOW)&StartupInfo,
 		&ProcessInformation,
 		NULL);
+
 #else
 
 	BOOL BoolStatus = CreateProcessW(
@@ -89,11 +90,12 @@ int wmain(int argc, wchar_t* argv[])
 		NULL,
 		NULL,
 		FALSE,
-		EXTENDED_STARTUPINFO_PRESENT,
+		IgnoreAttributeList ? 0 : EXTENDED_STARTUPINFO_PRESENT,
 		NULL,
 		NULL,
 		(LPSTARTUPINFOW)&StartupInfo,
 		&ProcessInformation);
+
 #endif 
 	
 	wprintf(L"CreateProcessInternalW: %ls\n", BoolStatus ? L"Success" : L"Fail");
